@@ -12,7 +12,7 @@ const ENV_CONFIG = {
 
 // Token Bot Telegram Anda
 const TELEGRAM_BOT_TOKEN = "8608857856:AAF7ZnTHHCISwhwDKvF48At94bepYtgzkWY";
-const OWNER_TELEGRAM_ID = 7017709687; // <-- Ganti dengan angka Telegram ID Anda
+const OWNER_TELEGRAM_ID = 123456789; // <-- Ganti dengan angka Telegram ID Anda
 const WHATSAPP_OWNER = "https://Wa.me/+6282231669053";
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
@@ -70,7 +70,7 @@ function escapeHTML(str) {
 }
 
 // ==========================================
-// DAFTAR ROASTING BUYER
+// DAFTAR ROASTING BUYER & OWNER
 // ==========================================
 const toxicMessages = [
     "Heh miskin! 🤬 Token lu bentukannya kayak muka lu, hancur berantakan! Masukin yang bener anj*ng, jangan ngasal mulu lo anak pungut! 🖕",
@@ -87,9 +87,9 @@ const spamToxicMessages = [
 ];
 
 const ownerRoastMessages = [
-    "<blockquote>💥 <b>MSH SERVER KONT*L DOWN!</b> 💥\nWoi babi, ini murni servernya yang ampas! Heh Owner Setres 🫵, ngurus server MSH kok kayak ngurus panti asuhan, gembel banget anj*ng! Benerin gih bangsat, malu-maluin aja jualan server kentang! 🤬🖕</blockquote>\n<i>Buat lu bro, sabar yak botnya lagi ayan.</i>",
-    "<blockquote>🔥 <b>MSH API JEBOL ANJ*NG!</b> 🔥\nIni bukan lu yang salah bro, murni ownernya yang tolol! Woi Owner, duit masuk doang tapi maintenance kaga pernah lu ya b*rengsat! Bangun woi benerin codingan MSH lu yang sekelas tai ayam itu! 💩🔨</blockquote>\n<i>Tungguin bentar yak, biar disapu dulu servernya.</i>",
-    "<blockquote>💀 <b>SISTEM MSH MATI SURI BANGSAT!</b> 💀\nOwnernya lagi open BO apa gimana nih?! Server error malah dibiarin anj*ng! Woi Owner Setres, perbaiki cepet gausah males-malesan lu babi! 🤬</blockquote>\n<i>Maap bro, ownernya lagi tolol hari ini.</i>"
+    "<blockquote>💥 <b>SERVER KONT*L DOWN!</b> 💥\nWoi babi, ini murni servernya yang ampas! Heh Owner Setres 🫵, ngurus server kok kayak ngurus panti asuhan, gembel banget anj*ng! Benerin gih bangsat, malu-maluin aja jualan server kentang! 🤬🖕</blockquote>\n<i>Buat lu bro, sabar yak botnya lagi ayan.</i>",
+    "<blockquote>🔥 <b>API JEBOL ANJ*NG!</b> 🔥\nIni bukan lu yang salah bro, murni ownernya yang tolol! Woi Owner, duit masuk doang tapi maintenance kaga pernah lu ya b*rengsat! Bangun woi benerin codingan lu yang sekelas tai ayam itu! 💩🔨</blockquote>\n<i>Tungguin bentar yak, biar disapu dulu servernya.</i>",
+    "<blockquote>💀 <b>SISTEM MATI SURI BANGSAT!</b> 💀\nOwnernya lagi open BO apa gimana nih?! Server error malah dibiarin anj*ng! Woi Owner Setres, perbaiki cepet gausah males-malesan lu babi! 🤬</blockquote>\n<i>Maap bro, ownernya lagi tolol hari ini.</i>"
 ];
 
 function getRandomToxicMsg() { return toxicMessages[Math.floor(Math.random() * toxicMessages.length)]; }
@@ -132,7 +132,7 @@ function sanitizeResponse(data) {
         try { data = JSON.parse(data); } catch (e) { return data; }
     }
     if (typeof data === 'object' && data !== null) {
-        data.creator = "HAOMI";
+        data.creator = "MSH";
     }
     return data;
 }
@@ -567,7 +567,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return bot.sendMessage(chatId, `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Langkah 1/2: Masukkan <b>email</b> akun Alight Motion target:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
     }
 
-    // --- INTEGRASI PEMBAYARAN RAMASHOP QRIS OTOMATIS ---
+    // --- INTEGRASI PEMBAYARAN RAMASHOP QRIS OTOMATIS (FIXED URL & PAYLOAD) ---
     if (["pay_1_bulan", "pay_2_bulan", "pay_3_bulan", "pay_4_bulan", "pay_permanen"].includes(data)) {
         let packageDetails = {
             "pay_1_bulan": { name: "1 Bulan", days: 30, price: 15000 },
@@ -593,11 +593,11 @@ bot.on('callback_query', async (callbackQuery) => {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
 
             const resData = response.data;
-            if (resData && (resData.status || resData.success || resData.checkout_url || resData.pay_url)) {
-                const checkoutUrl = resData.checkout_url || resData.pay_url || resData.url;
+            const checkoutUrl = resData.checkout_url || resData.pay_url || resData.url || (resData.data && (resData.data.checkout_url || resData.data.pay_url || resData.data.url));
 
+            if (resData && (resData.status === true || resData.success === true || checkoutUrl)) {
                 db.pendingInvoices[chatId] = {
-                    reference: resData.reference || resData.trx_id || "TRX-" + Date.now(),
+                    reference: resData.reference || resData.trx_id || (resData.data && resData.data.reference) || "TRX-" + Date.now(),
                     tokenToActivate: generatedToken,
                     days: packageDetails.days,
                     packageName: packageDetails.name,
@@ -615,7 +615,7 @@ bot.on('callback_query', async (callbackQuery) => {
                         parse_mode: "HTML", 
                         reply_markup: { 
                             inline_keyboard: [
-                                [{ text: "🌐 Buka Link Pembayaran QRIS", url: checkoutUrl }],
+                                [{ text: "🌐 Buka Link Pembayaran QRIS", url: checkoutUrl || "https://ramashop.my.id" }],
                                 [{ text: "✅ Konfirmasi / Cek Status Bayar", callback_data: "check_payment_status" }],
                                 [{ text: "❌ Batal", callback_data: "back_to_start" }]
                             ] 
@@ -628,7 +628,8 @@ bot.on('callback_query', async (callbackQuery) => {
 
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            await bot.sendMessage(chatId, getOwnerRoastMsg(), { parse_mode: "HTML" });
+            let errDetail = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+            await bot.sendMessage(chatId, `⚠️ <b>Gagal Menghubungi Server Ramashop:</b>\n<code>${escapeHTML(errDetail)}</code>\n\n` + getOwnerRoastMsg(), { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "show_pricing" }]] } });
         }
         return;
     }
@@ -902,4 +903,4 @@ bot.on('message', async (msg) => {
     }
 });
 
-console.log("MSH Telegram Bot Berjalan! Prefix MSH- & Master Token MSH_XML Active: ON 🔥");
+console.log("MSH Telegram Bot Berjalan! Clean Owner Roasting & Ramashop Ready: ON 🔥");
