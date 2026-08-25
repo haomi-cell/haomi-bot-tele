@@ -10,13 +10,14 @@ const ENV_CONFIG = {
     RAMASHOP_API_KEY: "rg_ea029ad8b5262570682db8bbc92a43"
 };
 
-const TELEGRAM_BOT_TOKEN = "8608857856:AAF7ZnTHHCISwhwDKvF48At94bepYtgzkWY";
-const OWNER_TELEGRAM_ID = 7017709687; // Disesuaikan dengan ID Owner yang bener
+// TOKEN BOT TELEGRAM BARU LU YANG UDAH DIBENERIN
+const TELEGRAM_BOT_TOKEN = "8608857856:AAFDVTTUq5bzOoALI7mOPQoKxE1PhN32PJU";
+const OWNER_TELEGRAM_ID = 7017709687; 
 const OWNER_SECRET_KEY = "HAOMI_XML";
 const BANNER_IMAGE_URL = "https://i.imgur.com/i4qquS3.jpeg";
 const WHATSAPP_OWNER = "https://Wa.me/+6282231669053";
 
-const bot = new TelegramBot(TOKEN_BOT, { polling: true });
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
 // --- DATABASE PERSISTEN (JSON FILE SYSTEM) ---
 const DB_FILE = './database.json';
@@ -138,7 +139,6 @@ function sanitizeResponse(data) {
     return data;
 }
 
-// --- HELPER: CEK STATUS LANGGANAN (SUPPORT SYSTEM BARU & LAMA) ---
 function getUserSubscription(userId) {
     const user = db.users[userId];
     const sub = db.subscriptions[userId];
@@ -172,7 +172,6 @@ function getUserSubscription(userId) {
     return { token: null, statusInfo: "Belum Aktif" };
 }
 
-// --- ANIMASI LOADING MSH ---
 async function animateLoading(chatId, baseText) {
     const frames = [
         `🔄 <b>MSH SYSTEM: ${baseText}</b>\n<code>[ ░░░░░░░░░░ ] 0%</code> ⠋ <i>Inisialisasi server MSH...</i>`,
@@ -189,7 +188,6 @@ async function animateLoading(chatId, baseText) {
     return msg; 
 }
 
-// --- TAMPILAN MENU UTAMA & START ---
 async function sendStartMenu(chatId, msgObj, messageId = null) {
     if (messageId) {
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
@@ -250,7 +248,6 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
         return;
     }
 
-    // MENU BELUM PUNYA TOKEN
     const captionText = 
         `🔥 <b>ALIGHT MOTION PREMIUM LOUNGE</b> 🔥\n\n` +
         `Yo <b>${fullName}</b>, selamat datang di sistem elit!\n` +
@@ -275,13 +272,11 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
     await bot.sendPhoto(chatId, BANNER_IMAGE_URL, { caption: captionText, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboardRows } });
 }
 
-// --- MENU PRICING & QRIS RAMASHOP ---
 async function sendPricingMenu(chatId, messageId = null) {
     if (messageId) {
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
     }
 
-    const wa7d = `https://wa.me/6282231669053?text=Halo%20Owner,%20saya%20ingin%20beli%20Token%20Alight%20Motion%20Paket%207%20Hari%20(Rp%2010.000).`;
     const wa1m = `https://wa.me/6282231669053?text=Halo%20Owner,%20saya%20ingin%20beli%20Token%20Alight%20Motion%20Paket%201%20Bulan%20(Rp%2015.000).`;
 
     const text = (
@@ -311,7 +306,6 @@ async function sendPricingMenu(chatId, messageId = null) {
     await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: replyMarkup });
 }
 
-// --- CALLBACK QUERY HANDLER ---
 bot.on('callback_query', async (callbackQuery) => {
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
@@ -371,7 +365,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return sendStartMenu(chatId, msg, messageId);
     }
 
-    // PANEL OWNER
     if (data === "owner_panel" || data === "admin_panel") {
         if (userId !== OWNER_TELEGRAM_ID && (!db.users[userId] || !db.users[userId].is_owner)) {
             return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Lu bukan owner babi!", show_alert: true });
@@ -437,7 +430,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return bot.sendMessage(chatId, `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Masukkan email target (Gmail):</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
     }
 
-    // --- RAMASHOP QRIS DEPOSIT ---
     if (["pay_1_bulan", "pay_2_bulan", "pay_3_bulan", "pay_4_bulan", "pay_permanen"].includes(data)) {
         let packageDetails = {
             "pay_1_bulan": { name: "1 Bulan", days: 30, price: 15000 },
@@ -635,7 +627,6 @@ bot.on('callback_query', async (callbackQuery) => {
     await bot.answerCallbackQuery(callbackQuery.id);
 });
 
-// --- HANDLER PESAN TEKS & ENDPOINT ALIGHT MOTION ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -652,7 +643,6 @@ bot.on('message', async (msg) => {
 
     const currentState = userState[chatId] || {};
 
-    // 1. Owner Gen Token Days
     if (currentState.step === "waiting_for_owner_gen_days" && userId === OWNER_TELEGRAM_ID) {
         delete userState[chatId];
         const days = text.trim();
@@ -663,7 +653,6 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, `✅ <b>Token Berhasil Dibuat!</b>\n\n<blockquote>⏱️ Durasi: <b>${days} Hari</b>\n🔑 Token: <code>${complexToken}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
     }
 
-    // 2. Owner Broadcast
     if (currentState.step === "waiting_for_owner_bcast_msg" && userId === OWNER_TELEGRAM_ID) {
         delete userState[chatId];
         const bcastMsg = text.trim();
@@ -675,7 +664,6 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, `✅ Broadcast sukses dikirim ke <b>${count}</b> user terdaftar!`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
     }
 
-    // 3. Verifikasi Token Manual / Secret Key Owner
     if (currentState.step === "waiting_for_rental_token" || text.startsWith("MSH-") || text === OWNER_SECRET_KEY) {
         if (currentState.step === "waiting_for_rental_token") delete userState[chatId];
         const inputToken = text.trim();
@@ -697,7 +685,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(chatId, `❌ <b>Token MSH Ditolak!</b>\n<blockquote>${selectedToxicMsg}</blockquote>`, { parse_mode: "HTML" });
         }
 
-        const expiryTime = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 hari default
+        const expiryTime = Date.now() + (30 * 24 * 60 * 60 * 1000); 
         db.subscriptions[userId] = { 
             token: inputToken, 
             expiryDate: expiryTime, 
@@ -712,13 +700,11 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // --- FITUR ALIGHT MOTION ENDPOINT (SEND & VERIF) ---
     const { token, statusInfo } = getUserSubscription(userId);
     if (!token || statusInfo === "Masa Aktif Habis") {
         return bot.sendMessage(chatId, "⛔ *WEY KERE!* Akses ditolak. Lo belum punya tiket VIP. Ketik /start terus pilih mau ngemis trial atau beli tiket resmi.");
     }
 
-    // Endpoint 1: Kirim Gmail (action=send)
     if (text.includes('@') && text.includes('.')) {
         global.userEmailSession = global.userEmailSession || {};
         global.userEmailSession[userId] = text.trim();
@@ -742,7 +728,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // Endpoint 2: Verifikasi Magic Link (action=verif)
     if (text.startsWith('http://') || text.startsWith('https://')) {
         global.userEmailSession = global.userEmailSession || {};
         const email = global.userEmailSession[userId];
@@ -774,7 +759,6 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId, "💡 *Gagal Paham?*\nKalo lo udah di dalem VVIP Lounge, lo cukup kirim **Email Gmail Alight Motion** buat mulai aktivasi.");
 });
 
-// --- COMMANDS ---
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     if (isFlooding(chatId)) return bot.sendMessage(chatId, `⛔ <b>MSH SECURITY: KEBANYAKAN BACOT LU!</b>`, { parse_mode: "HTML" });
@@ -801,4 +785,4 @@ bot.onText(/\/cek/, (msg) => {
     }
 });
 
-console.log("Bot Telegram VVIP MSH Store (Anti-Error & Endpoints Fixed) Berjalan...");
+console.log("Bot Telegram VVIP MSH Store (Token Baru Terpasang & Endpoints Fixed) Berjalan...");
