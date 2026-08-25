@@ -4,9 +4,8 @@ const fs = require('fs');
 
 // Konfigurasi API Utama
 const ENV_CONFIG = {
-    HAOMI_API_KEY: "e329d3cb861969fe599ef5fe",
-    HAOMI_ACCESS_TOKEN: "aks-1d3bd53f4d857a690a77471d",
-    HAOMI_API_BASE: "https://ndxhs.my.id", 
+    HAOMI_API_BASE: "https://restapidhan.vercel.app",
+    HAOMI_API_KEY: "dravndesamuel",
     RAMASHOP_API_URL: "https://ramashop.my.id/api/create-invoice", 
     RAMASHOP_API_KEY: "rg_ea029ad8b5262570682db8bbc92a43"
 };
@@ -15,7 +14,6 @@ const ENV_CONFIG = {
 const TELEGRAM_BOT_TOKEN = "8608857856:AAF7ZnTHHCISwhwDKvF48At94bepYtgzkWY";
 const OWNER_TELEGRAM_ID = 123456789; // <-- Ganti dengan angka Telegram ID Anda
 const WHATSAPP_OWNER = "https://Wa.me/+6282231669053";
-const TELEGRAM_CHANNEL_TESTI = "https://t.me/TestimoniBotKamu"; 
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
@@ -25,7 +23,7 @@ const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 const DB_FILE = './database.json';
 
 let db = {
-    subscriptions: {}, 
+    subscriptions: {}, // chatId -> { token, expiryDate, warningSent, duration, username, name }
     trialCooldowns: {}, 
     timeoutUsers: {}, 
     spamStats: {} 
@@ -127,14 +125,9 @@ function isFlooding(chatId) {
     return recentLogs.length > 5;
 }
 
-// Fungsi pembantu untuk memastikan semua objek respons API mengubah creator jadi HAOMI
 function sanitizeResponse(data) {
     if (typeof data === 'string') {
-        try {
-            data = JSON.parse(data);
-        } catch (e) {
-            return data;
-        }
+        try { data = JSON.parse(data); } catch (e) { return data; }
     }
     if (typeof data === 'object' && data !== null) {
         data.creator = "HAOMI";
@@ -179,15 +172,19 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
         `Selamat datang di sistem otomatis HAOMI! Silakan pilih opsi di bawah ini:`
     );
 
-    const replyMarkup = {
-        inline_keyboard: [
-            [{ text: "🎁 Token Gratis Uji Coba 5 Menit", callback_data: "free_trial" }],
-            [{ text: "📋 Pilih Token Akses", callback_data: "show_pricing" }],
-            [{ text: "🔑 Masukkan Token Akses", callback_data: "input_token_menu" }],
-            [{ text: "📢 Cek Testimoni / Bukti Testi", url: TELEGRAM_CHANNEL_TESTI }],
-            [{ text: "👨‍💻 Hubungi Owner HAOMI 😹", url: WHATSAPP_OWNER }]
-        ]
-    };
+    const keyboardRows = [
+        [{ text: "🎁 Token Gratis Uji Coba 5 Menit", callback_data: "free_trial" }],
+        [{ text: "📋 Pilih Token Akses", callback_data: "show_pricing" }],
+        [{ text: "🔑 Masukkan Token Akses", callback_data: "input_token_menu" }]
+    ];
+
+    if (chatId === OWNER_TELEGRAM_ID) {
+        keyboardRows.push([{ text: "👑 Buka Panel Owner Khusus", callback_data: "owner_panel" }]);
+    }
+
+    keyboardRows.push([{ text: "👨‍💻 Hubungi Owner HAOMI 😹", url: WHATSAPP_OWNER }]);
+
+    const replyMarkup = { inline_keyboard: keyboardRows };
 
     const footerText = (
         text + 
@@ -206,7 +203,7 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
 
 async function sendPricingMenu(chatId, messageId = null) {
     const text = (
-        `📋 <b>HAOMI - DAFTAR HARGA SEWA AKUN AM</b> 📋\n\n` +
+        `📋 <b>HAOMI - DAFTAR HARGA SEWA AKSES AM</b> 📋\n\n` +
         `Pilih durasi paket sesuai kapasitas dompet dan mental Anda:\n\n` +
         `<blockquote>• <b>1 Bulan — Rp15.000</b>\n` +
         `  <i>└ Paket darurat buat yang hobi mepet deadline tapi dompet sekarat.</i>\n\n` +
@@ -240,6 +237,9 @@ async function sendPricingMenu(chatId, messageId = null) {
     }
 }
 
+// ==========================================
+// MENU UTAMA 
+// ==========================================
 async function sendMainMenu(chatId, messageId = null) {
     const isTrial = db.subscriptions[chatId] && db.subscriptions[chatId].duration === "Trial";
     let statusInfo = "✅ Aktif & Terverifikasi (HAOMI Cloud)";
@@ -255,31 +255,71 @@ async function sendMainMenu(chatId, messageId = null) {
     const welcomeText = (
         `✨ <b>HAOMI - Alight Motion Premium Bot</b> ✨\n\n` +
         `📊 <b>Status Akses:</b>\n${statusInfo}\n\n` +
-        `Silakan pilih fitur layanan HAOMI di bawah ini:\n\n` +
-        `<blockquote>📤 <b>Alight Motion Send</b>\n` +
-        `└ <i>Kirim magic link verifikasi ke email Alight Motion</i>\n\n` +
-        `⚡ <b>Alight Motion Verify</b>\n` +
-        `└ <i>Verifikasi link magic & aktifkan premium</i>\n\n` +
-        `🌐 <b>Alight Motion Google Auth</b>\n` +
-        `└ <i>Premiumkan akun menggunakan Google Auth</i>\n\n` +
-        `📦 <b>Alight Motion Bulk Email</b>\n` +
-        `└ <i>Generate multiple email verifications in bulk</i></blockquote>`
+        `Silakan pilih menu aktivasi Alight Motion di bawah ini:\n\n` +
+        `<blockquote>📤 <b>AM Send Magic Link</b>\n` +
+        `└ <i>Kirim link verifikasi ke email target</i>\n\n` +
+        `⚡ <b>AM Verif / Aktivasi Akun</b>\n` +
+        `└ <i>Verifikasi email & magic link otomatis</i></blockquote>`
     );
 
-    const replyMarkup = {
-        inline_keyboard: [
-            [{ text: "📤 AM Send", callback_data: "am_send" }, { text: "⚡ AM Verify", callback_data: "am_verify" }],
-            [{ text: "🌐 AM Google Auth", callback_data: "am_google" }, { text: "📦 AM Bulk Email", callback_data: "am_bulk" }],
-            [{ text: "📢 Cek Testimoni / Bukti Testi", url: TELEGRAM_CHANNEL_TESTI }],
-            [{ text: "👨‍💻 Hubungi Owner HAOMI 😹", url: WHATSAPP_OWNER }]
-        ]
-    };
+    const keyboardRows = [
+        [{ text: "📤 AM Send Email", callback_data: "menu_send" }],
+        [{ text: "⚡ AM Verif Akun", callback_data: "menu_verif" }],
+        [{ text: "🚪 Logout / Ganti Token", callback_data: "logout_token" }]
+    ];
+
+    if (chatId === OWNER_TELEGRAM_ID) {
+        keyboardRows.push([{ text: "👑 Buka Panel Owner Khusus", callback_data: "owner_panel" }]);
+    }
+
+    keyboardRows.push([{ text: "👨‍💻 Hubungi Owner HAOMI 😹", url: WHATSAPP_OWNER }]);
+
+    const replyMarkup = { inline_keyboard: keyboardRows };
 
     if (messageId) {
         try { await bot.editMessageText(welcomeText, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: replyMarkup }); } 
         catch (e) { await bot.sendMessage(chatId, welcomeText, { parse_mode: "HTML", reply_markup: replyMarkup }); }
     } else {
         await bot.sendMessage(chatId, welcomeText, { parse_mode: "HTML", reply_markup: replyMarkup });
+    }
+}
+
+// ==========================================
+// PANEL KHUSUS OWNER (DENGAN LIST USER DETAIL)
+// ==========================================
+async function sendOwnerPanel(chatId, messageId = null) {
+    if (chatId !== OWNER_TELEGRAM_ID) return;
+
+    let totalBuyer = Object.keys(db.subscriptions).length;
+    let totalBanned = Object.keys(db.timeoutUsers).length;
+    let estimasiKasir = totalBuyer * 15000;
+
+    const panelText = (
+        `👑🔥 <b>HAOMI SULTAN OWNER PANEL</b> 🔥👑\n\n` +
+        `Selamat datang di panel kontrol utama bot bosku!\n\n` +
+        `<blockquote>📊 <b>STATISTIK SAAT INI:</b>\n` +
+        `├ Total Buyer Aktif: <b>${totalBuyer} Orang</b>\n` +
+        `├ Total Gembel Banned: <b>${totalBanned} Orang</b>\n` +
+        `└ Estimasi Kasar Masuk: <b>Rp${estimasiKasir.toLocaleString('id-ID')}</b></blockquote>\n\n` +
+        `Silakan pilih aksi manajemen bot di bawah ini:`
+    );
+
+    const replyMarkup = {
+        inline_keyboard: [
+            [{ text: "👥 Tampilkan Seluruh User Detail", callback_data: "owner_list_users" }],
+            [{ text: "📊 Cek Laporan Keuangan (/profit)", callback_data: "owner_profit" }],
+            [{ text: "🏆 Lihat Top Gembel Spam (/gembel)", callback_data: "owner_gembel" }],
+            [{ text: "🔑 Buat Token Baru (/gen)", callback_data: "owner_gen_menu" }],
+            [{ text: "📢 Broadcast Pesan Massal (Brotkes)", callback_data: "owner_bcast_menu" }],
+            [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "back_to_menu" }]
+        ]
+    };
+
+    if (messageId) {
+        try { await bot.editMessageText(panelText, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: replyMarkup }); } 
+        catch (e) { await bot.sendMessage(chatId, panelText, { parse_mode: "HTML", reply_markup: replyMarkup }); }
+    } else {
+        await bot.sendMessage(chatId, panelText, { parse_mode: "HTML", reply_markup: replyMarkup });
     }
 }
 
@@ -403,6 +443,7 @@ bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
     const userFirstName = callbackQuery.from.first_name || "Buyer";
+    const userUsername = callbackQuery.from.username ? `@${callbackQuery.from.username}` : "Tanpa Username";
 
     if (isFlooding(chatId)) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Kebanyakan klik lu anj*ng! Santai dikit napa di HAOMI Bot!", show_alert: true });
 
@@ -411,6 +452,107 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === "show_pricing") return sendPricingMenu(chatId, msg.message_id);
     if (data === "back_to_start") { delete userState[chatId]; return sendStartMenu(chatId, msg, msg.message_id); }
+
+    if (data === "back_to_menu") {
+        userState[chatId] = {};
+        if (db.subscriptions[chatId]) {
+            return sendMainMenu(chatId, msg.message_id);
+        } else {
+            return sendStartMenu(chatId, msg, msg.message_id);
+        }
+    }
+
+    // --- LOGOUT / HAPUS TOKEN BUYER ---
+    if (data === "logout_token") {
+        if (db.subscriptions[chatId]) {
+            delete db.subscriptions[chatId];
+            saveDatabase();
+        }
+        userState[chatId] = {};
+        await bot.answerCallbackQuery(callbackQuery.id, { text: "🚪 Berhasil logout token! Akses Anda telah dicabut.", show_alert: true });
+        return sendStartMenu(chatId, msg, msg.message_id);
+    }
+
+    // --- PANEL OWNER CALLBACKS ---
+    if (data === "owner_panel") {
+        if (chatId !== OWNER_TELEGRAM_ID) return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Lu bukan owner babi!", show_alert: true });
+        return sendOwnerPanel(chatId, msg.message_id);
+    }
+
+    // FITUR: TAMPILKAN SELURUH USER DETAIL (DENGAN WAKTU & KETERANGAN)
+    if (data === "owner_list_users") {
+        if (chatId !== OWNER_TELEGRAM_ID) return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Lu bukan owner babi!", show_alert: true });
+        
+        let subKeys = Object.keys(db.subscriptions);
+        if (subKeys.length === 0) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Belum ada user / buyer aktif saat ini.", show_alert: true });
+        }
+
+        let userListText = `👥 <b>DAFTAR SELURUH USER AKTIF (${subKeys.length} Orang)</b>:\n\n`;
+        let now = Date.now();
+
+        subKeys.forEach((id, index) => {
+            let sub = db.subscriptions[id];
+            let expiredDateFormatted = new Date(sub.expiryDate).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+            let timeLeftMs = sub.expiryDate - now;
+            let daysLeft = Math.floor(timeLeftMs / (1000 * 60 * 60 * 24));
+            let hoursLeft = Math.floor((timeLeftMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+            let statusWaktu = timeLeftMs > 0 ? `${daysLeft} Hari, ${hoursLeft} Jam lagi` : "⚠️ <b>Sudah Habis!</b>";
+
+            userListText += `<b>${index + 1}. Nama/ID:</b> <code>${id}</code>\n`;
+            userListText += `├ <b>Token:</b> <code>${sub.token}</code>\n`;
+            userListText += `├ <b>Paket/Keterangan:</b> ${sub.duration || "Custom / Master"}\n`;
+            userListText += `├ <b>Berakhir Pada:</b> ${expiredDateFormatted}\n`;
+            userListText += `└ <b>Sisa Waktu:</b> ${statusWaktu}\n\n`;
+        });
+
+        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
+        return bot.sendMessage(chatId, userListText, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Kembali ke Panel Owner", callback_data: "owner_panel" }]] } });
+    }
+
+    if (data === "owner_profit") {
+        if (chatId !== OWNER_TELEGRAM_ID) return;
+        let totalBuyer = Object.keys(db.subscriptions).length;
+        let estimasiKasir = totalBuyer * 15000;
+        return bot.answerCallbackQuery(callbackQuery.id, { text: `📊 Total Buyer Aktif: ${totalBuyer} Orang | Estimasi Kasar: Rp${estimasiKasir.toLocaleString('id-ID')}`, show_alert: true });
+    }
+
+    if (data === "owner_gembel") {
+        if (chatId !== OWNER_TELEGRAM_ID) return;
+        let countGembel = Object.keys(db.spamStats).length;
+        return bot.answerCallbackQuery(callbackQuery.id, { text: `🏆 Tercatat ada ${countGembel} gembel yang pernah salah token hari ini. Cek via /gembel`, show_alert: true });
+    }
+
+    if (data === "owner_gen_menu") {
+        if (chatId !== OWNER_TELEGRAM_ID) return;
+        userState[chatId] = { step: "waiting_for_owner_gen_days" };
+        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
+        return bot.sendMessage(chatId, `🔑 <b>Generator Token Owner</b>\n\n<blockquote>Ketik jumlah hari masa aktif token yang ingin dibuat (Contoh: <code>30</code> untuk 1 bulan, atau <code>3650</code> untuk permanen):</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
+    }
+
+    if (data === "owner_bcast_menu") {
+        if (chatId !== OWNER_TELEGRAM_ID) return;
+        userState[chatId] = { step: "waiting_for_owner_bcast_msg" };
+        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
+        return bot.sendMessage(chatId, `📢 <b>Broadcast Pesan Massal (Brotkes)</b>\n\n<blockquote>Ketik pesan yang ingin dikirimkan ke seluruh buyer aktif saat ini:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
+    }
+
+    // --- FITUR 1: AM SEND EMAIL ---
+    if (data === "menu_send") {
+        if (!db.subscriptions[chatId]) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token HAOMI dulu anj*ng!", show_alert: true });
+        userState[chatId] = { step: "waiting_for_am_send_email" };
+        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
+        return bot.sendMessage(chatId, `📤 <b>AM Send Magic Link</b>\n\n<blockquote>Silakan masukkan <b>email target</b> Alight Motion yang ingin dikirimkan link:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
+    }
+
+    // --- FITUR 2: AM VERIF AKUN ---
+    if (data === "menu_verif") {
+        if (!db.subscriptions[chatId]) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token HAOMI dulu anj*ng!", show_alert: true });
+        userState[chatId] = { step: "waiting_for_am_verif_email" };
+        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
+        return bot.sendMessage(chatId, `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Langkah 1/2: Masukkan <b>email</b> akun Alight Motion target:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
+    }
 
     if (["pay_1_bulan", "pay_2_bulan", "pay_3_bulan", "pay_4_bulan", "pay_permanen"].includes(data)) {
         let packageDetails = {
@@ -429,23 +571,19 @@ bot.on('callback_query', async (callbackQuery) => {
             const generatedToken = generateComplexToken();
             const expiryTime = Date.now() + (packageDetails.days * 24 * 60 * 60 * 1000);
             
-            db.subscriptions[chatId] = { token: generatedToken, expiryDate: expiryTime, warningSent: false, duration: packageDetails.name };
+            db.subscriptions[chatId] = { 
+                token: generatedToken, 
+                expiryDate: expiryTime, 
+                warningSent: false, 
+                duration: packageDetails.name,
+                username: userUsername,
+                name: userFirstName
+            };
             saveDatabase();
 
-            bot.sendMessage(OWNER_TELEGRAM_ID, `💰 <b>HAOMI CASH: DUIT MASUK!</b> 💰\n\n<blockquote>👤 <b>Buyer:</b> ${escapeHTML(userFirstName)}\n🆔 <b>ID:</b> <code>${chatId}</code>\n📦 <b>Paket:</b> ${packageDetails.name}\n💵 <b>Harga:</b> Rp${packageDetails.price}\n🔑 <b>Token Jatahnya:</b> <code>${generatedToken}</code></blockquote>\n\nMantap bosku! Cair lagi buat ngopi di HAOMI! ☕`, { parse_mode: "HTML" });
+            bot.sendMessage(OWNER_TELEGRAM_ID, `💰 <b>HAOMI CASH: DUIT MASUK!</b> 💰\n\n<blockquote>👤 <b>Buyer:</b> ${escapeHTML(userFirstName)} (${userUsername})\n🆔 <b>ID:</b> <code>${chatId}</code>\n📦 <b>Paket:</b> ${packageDetails.name}\n💵 <b>Harga:</b> Rp${packageDetails.price}\n🔑 <b>Token Jatahnya:</b> <code>${generatedToken}</code></blockquote>\n\nMantap bosku! Cair lagi buat ngopi di HAOMI! ☕`, { parse_mode: "HTML" });
 
-            let paymentRoastText = "";
-            if (data === "pay_1_bulan") {
-                paymentRoastText = `🤡 <b>WKWKWK LU BELI PAKET KERE HAOMI (1 Bulan)!</b> 🤡\n\nDih, miskin amat lu anj*ng maksain sewa sebulan doang? 😭 Takut rugi ya bangsat? Mending duit lu buat beli gorengan sekampung daripada sewa bot HAOMI nanggung wkwk! Nih token gembel lu:`;
-            } else if (data === "pay_2_bulan") {
-                paymentRoastText = `🤪 <b>PAKET 2 BULAN HAOMI: MENDANG-MENDING KONT*L!</b> 🤪\n\nTanggung amat lu babi sewa cuma 2 bulan, miskin mah miskin aja gausah gaya-gayaan wkwk. Yaudah nih nikmatin token HAOMI hasil nguli lu:`;
-            } else if (data === "pay_3_bulan") {
-                paymentRoastText = `😏 <b>PAKET 3 BULAN HAOMI: GAYA SULTAN DOMPET PELAJAR</b> 😏\n\nNggak miskin-miskin amat tapi gaya lu selangit bangsat. Standar kaum pertengahan yang hobi ngutang. Nih token HAOMI lu, pake yang bener!`;
-            } else if (data === "pay_4_bulan") {
-                paymentRoastText = `😎 <b>PAKET 4 BULAN HAOMI: LUMAYAN ADA OTAK LU</b> 😎\n\nWah tumben agak modal dikit lu b*rengsat. Walaupun masih bau-bau kencur, seenggaknya otak lu agak encer dibanding gembel yang beli sebulan. Nih token HAOMI-nya:`;
-            } else if (data === "pay_permanen") {
-                paymentRoastText = `👑🔥 <b>HORMAT BOS HAOMI, PEMBELI PAKET PERMANEN SULTAN!</b> 🔥👑\n\nWahai Sultan penguasa bumi HAOMI! Keren banget mental kelas atas lu bro, gak kayak gembel-gembel yang ngeteng bulanan. Sungguh wibawa sultan terpancar nyata! 🙇‍♂️ Silakan pakai token VIP HAOMI lu bos:`;
-            }
+            let paymentRoastText = `👑🔥 <b>HORMAT BOS HAOMI, PEMBELI PAKET SULTAN!</b> 🔥👑\nSilakan pakai token VIP HAOMI lu bos:`;
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
             await bot.sendMessage(chatId, `✅ <b>Pembayaran HAOMI Berhasil Diverifikasi!</b>\n\n<blockquote>${paymentRoastText}</blockquote>\n\n🔑 <b>Token Akses Anda:</b> <code>${generatedToken}</code>\n\nMembuka menu utama HAOMI bot...`, { parse_mode: "HTML" });
@@ -470,7 +608,14 @@ bot.on('callback_query', async (callbackQuery) => {
 
         db.trialCooldowns[chatId] = now; 
         const trialToken = generateComplexToken();
-        db.subscriptions[chatId] = { token: trialToken, expiryDate: now + (5 * 60 * 1000), warningSent: false, duration: "Trial" };
+        db.subscriptions[chatId] = { 
+            token: trialToken, 
+            expiryDate: now + (5 * 60 * 1000), 
+            warningSent: false, 
+            duration: "Trial",
+            username: userUsername,
+            name: userFirstName
+        };
         saveDatabase();
 
         await bot.answerCallbackQuery(callbackQuery.id, { text: "🎉 Uji coba 5 menit HAOMI berhasil diaktifkan, pake cepet gembel!", show_alert: true });
@@ -493,18 +638,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return bot.editMessageText(`🔑 <b>Masukkan Token Akses HAOMI Anda:</b>\n\n<blockquote>Format token valid: <code>HAOMI-XXXX-XXXX-XXXX</code> atau Token Master.</blockquote>\nSilakan ketik dan kirim token Anda ke chat ini:`, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "back_to_start" }]] } });
     }
 
-    if (!db.subscriptions[chatId]) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token HAOMI dulu anj*ng, jangan songong mau masuk menu tanpa bayar!", show_alert: true });
-
-    if (["am_send", "am_verify", "am_google", "am_bulk"].includes(data)) {
-        userState[chatId] = { action: data, step: "waiting_for_email" };
-        let titles = { "am_send": "Alight Motion Send", "am_verify": "Alight Motion Verify", "am_google": "Alight Motion Google Auth", "am_bulk": "Alight Motion Bulk Email" };
-        try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) {}
-        return bot.sendMessage(chatId, `📧 <b>HAOMI Service: ${titles[data]}</b>\n\n<blockquote>Silakan ketik dan kirim <b>email</b> Anda ke chat ini:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
-    }
-
-    if (data === "back_to_menu") {
-        userState[chatId] = {}; return sendMainMenu(chatId, msg.message_id);
-    }
     await bot.answerCallbackQuery(callbackQuery.id);
 });
 
@@ -515,6 +648,7 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
     const userName = msg.from.first_name || "Gembel Tanpa Nama";
+    const userUsername = msg.from.username ? `@${msg.from.username}` : "Tanpa Username";
 
     if (!text || text.startsWith('/')) return;
     
@@ -526,6 +660,29 @@ bot.on('message', async (msg) => {
     const currentState = userState[chatId];
     if (!currentState) return;
 
+    // --- OWNER INPUT GENERATE TOKEN ---
+    if (currentState.step === "waiting_for_owner_gen_days" && chatId === OWNER_TELEGRAM_ID) {
+        delete userState[chatId];
+        const days = text.trim();
+        if (isNaN(days)) return bot.sendMessage(chatId, `❌ Masukin angka hari yang bener babi!`);
+        
+        const complexToken = generateComplexToken();
+        return bot.sendMessage(chatId, `✅ <b>Token Berhasil Dibuat!</b>\n\n<blockquote>⏱️ Durasi: <b>${days} Hari</b>\n🔑 Token: <code>${complexToken}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
+    }
+
+    // --- OWNER INPUT BROADCAST (BROTKES) ---
+    if (currentState.step === "waiting_for_owner_bcast_msg" && chatId === OWNER_TELEGRAM_ID) {
+        delete userState[chatId];
+        const bcastMsg = text.trim();
+        let count = 0;
+        for (const id in db.subscriptions) {
+            bot.sendMessage(id, `📢 <b>PENGUMUMAN DARI HAOMI SULTAN OWNER (BROTKES):</b>\n\n<blockquote>${escapeHTML(bcastMsg)}</blockquote>\n\n<i>— HAOMI Bot System 😹</i>`, { parse_mode: "HTML" }).catch(()=>{});
+            count++;
+        }
+        return bot.sendMessage(chatId, `✅ Broadcast (Brotkes) sukses dikirim ke <b>${count}</b> gembel aktif!`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
+    }
+
+    // 1. Handle Input Token Sewa
     if (currentState.step === "waiting_for_rental_token") {
         const inputToken = text.trim();
         const tokenRegex = /^HAOMI-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
@@ -559,16 +716,19 @@ bot.on('message', async (msg) => {
         const loadMsg = await animateLoading(chatId, "Validasi Keabsahan Token HAOMI...");
 
         try {
-            if (!isMasterToken) {
-                await axios.get(`${ENV_CONFIG.HAOMI_API_BASE}/alightmotion/send`, { params: { akseskey: inputToken, email: "validation-check@gmail.com" }, timeout: 15000 });
-            }
-            
             lastWrongTokens.delete(chatId); 
             wrongAttempts.delete(chatId);
             
             const expiryTime = isMasterToken ? (Date.now() + (3650 * 24 * 60 * 60 * 1000)) : (Date.now() + (30 * 24 * 60 * 60 * 1000));
             
-            db.subscriptions[chatId] = { token: inputToken, expiryDate: expiryTime, warningSent: false };
+            db.subscriptions[chatId] = { 
+                token: inputToken, 
+                expiryDate: expiryTime, 
+                warningSent: false,
+                duration: isMasterToken ? "Master VIP" : "Custom Token",
+                username: userUsername,
+                name: userName
+            };
             saveDatabase();
 
             delete userState[chatId];
@@ -581,54 +741,83 @@ bot.on('message', async (msg) => {
             await sendMainMenu(chatId);
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            if (!error.response || error.response.status >= 500) {
-                await bot.sendMessage(chatId, getOwnerRoastMsg(), { parse_mode: "HTML" }); 
-                setTimeout(() => sendStartMenu(chatId, msg), 3500);
-            } else {
-                punishBuyer(true); 
-            }
+            punishBuyer(true);
         }
         return;
     }
 
-    if (currentState.step === "waiting_for_email") {
-        const userInput = text.trim();
+    // 2. Handle AM Send Email
+    if (currentState.step === "waiting_for_am_send_email") {
+        const email = text.trim();
         delete userState[chatId];
 
-        // Validasi jika input kosong
-        if (!userInput) {
-            const errJson = sanitizeResponse({
-                status: false,
-                creator: "ndxhs",
-                error: "Input atau token tidak boleh kosong"
-            });
-            return bot.sendMessage(chatId, `❌ <b>HAOMI Error Response:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(errJson, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+        if (!email.includes('@')) {
+            return bot.sendMessage(chatId, `❌ Format email salah babi! Masukin email yang bener.`, { reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
         }
 
-        const loadMsg = await animateLoading(chatId, "Memproses Data ke Server HAOMI...");
+        const loadMsg = await animateLoading(chatId, "Mengirim Magic Link ke Server...");
 
         try {
-            const endpointMap = { "am_send": "/alightmotion/send", "am_verify": "/alightmotion/verify", "am_google": "/alightmotion/google", "am_bulk": "/alightmotion/bulk" };
-            const response = await axios.get(`${ENV_CONFIG.HAOMI_API_BASE}${endpointMap[currentState.action]}`, { params: { email: userInput }, timeout: 20000 });
-            
-            // Otomatis ubah creator di semua fitur menjadi "HAOMI"
+            const url = `${ENV_CONFIG.HAOMI_API_BASE}/api/am?action=send&apikey=${ENV_CONFIG.HAOMI_API_KEY}&email=${encodeURIComponent(email)}`;
+            const response = await axios.get(url, { timeout: 20000 });
             const cleanData = sanitizeResponse(response.data);
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            await bot.sendMessage(chatId, `✅ <b>HAOMI API Success Response:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+            await bot.sendMessage(chatId, `✅ <b>HAOMI Success Response:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
 
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            
             if (error.response && error.response.data) {
-                // Otomatis ubah creator pada data error server menjadi "HAOMI"
-                const cleanErrData = sanitizeResponse(error.response.data);
-                return bot.sendMessage(chatId, `⚠️ <b>HAOMI Server Response:</b>\n\n<blockquote><code>${escapeHTML(typeof cleanErrData === 'string' ? cleanErrData : JSON.stringify(cleanErrData, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+                const cleanErr = sanitizeResponse(error.response.data);
+                return bot.sendMessage(chatId, `⚠️ <b>HAOMI Server Response:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanErr, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
             }
-
             await bot.sendMessage(chatId, getOwnerRoastMsg(), { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
         }
+        return;
+    }
+
+    // 3. Handle AM Verif Akun (Langkah 1: Terima Email)
+    if (currentState.step === "waiting_for_am_verif_email") {
+        const email = text.trim();
+        if (!email.includes('@')) {
+            return bot.sendMessage(chatId, `❌ Format email salah babi! Masukin email yang bener.`);
+        }
+
+        userState[chatId] = { step: "waiting_for_am_verif_link", email: email };
+        return bot.sendMessage(chatId, `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Langkah 1/2: Email diterima (<code>${email}</code>).\nSekarang kirimkan <b>Magic Link (URL)</b> yang masuk ke email tersebut:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
+        return;
+    }
+
+    // 4. Handle AM Verif Akun (Langkah 2: Terima Magic Link & Eksekusi API Verif)
+    if (currentState.step === "waiting_for_am_verif_link") {
+        const magicLink = text.trim();
+        const savedEmail = currentState.email;
+        delete userState[chatId];
+
+        if (!magicLink.startsWith('http')) {
+            return bot.sendMessage(chatId, `❌ Link harus berformat URL (http/https) babi!`, { reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+        }
+
+        const loadMsg = await animateLoading(chatId, "Memproses Aktivasi Akun...");
+
+        try {
+            const url = `${ENV_CONFIG.HAOMI_API_BASE}/api/am?action=verif&apikey=${ENV_CONFIG.HAOMI_API_KEY}&email=${encodeURIComponent(savedEmail)}&url=${encodeURIComponent(magicLink)}`;
+            const response = await axios.get(url, { timeout: 20000 });
+            const cleanData = sanitizeResponse(response.data);
+
+            try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
+            await bot.sendMessage(chatId, `✅ <b>HAOMI Activation Success:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+
+        } catch (error) {
+            try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
+            if (error.response && error.response.data) {
+                const cleanErr = sanitizeResponse(error.response.data);
+                return bot.sendMessage(chatId, `⚠️ <b>HAOMI Server Response:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanErr, null, 2))}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+            }
+            await bot.sendMessage(chatId, getOwnerRoastMsg(), { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "back_to_menu" }]] } });
+        }
+        return;
     }
 });
 
-console.log("HAOMI Telegram Bot Berjalan! Mode Creator All-HAOMI: ON 🔥");
+console.log("HAOMI Telegram Bot Berjalan! Owner Panel + Broadcast + User Detail Active: ON 🔥");
