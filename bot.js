@@ -10,7 +10,7 @@ const ENV_CONFIG = {
     RAMASHOP_API_KEY: "rg_ea029ad8b5262570682db8bbc92a43"
 };
 
-const TELEGRAM_BOT_TOKEN = "8608857856:AAF7ZnTHHCISwhwDKvF48At94bepYtgzkWY";
+const TELEGRAM_BOT_TOKEN = "8608857856:AAFDVTTUq5bzOoALI7mOPQoKxE1PhN32PJU";
 const OWNER_TELEGRAM_ID = 7017709687; // Disesuaikan dengan ID Owner yang bener
 const OWNER_SECRET_KEY = "HAOMI_XML";
 const BANNER_IMAGE_URL = "https://i.imgur.com/i4qquS3.jpeg";
