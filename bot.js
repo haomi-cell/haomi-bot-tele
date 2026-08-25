@@ -12,7 +12,7 @@ const ENV_CONFIG = {
 
 // Token Bot Telegram Anda
 const TELEGRAM_BOT_TOKEN = "8608857856:AAF7ZnTHHCISwhwDKvF48At94bepYtgzkWY";
-const OWNER_TELEGRAM_ID = t.me/HAOMIXML; // <-- Ganti dengan angka Telegram ID Anda
+const OWNER_TELEGRAM_ID = https://t.me/HAOMIXML; // <-- Ganti dengan angka Telegram ID Anda
 const WHATSAPP_OWNER = "https://Wa.me/+6282231669053";
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
