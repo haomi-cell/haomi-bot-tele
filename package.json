@@ -1,0 +1,13 @@
+{
+  "name": "alight-motion-bot",
+  "version": "1.0.0",
+  "description": "Bot Telegram Automasi Alight Motion Premium",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
