@@ -2,25 +2,38 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const fs = require('fs');
 
-// --- KONFIGURASI API UTAMA & RAMASHOP ---
-const ENV_CONFIG = {
-    HAOMI_API_BASE: "https://restapidhan.vercel.app",
-    HAOMI_API_KEY: "dravndesamuel",
-    RAMASHOP_BASE_URL: "https://ramashop.my.id/api/public", 
-    RAMASHOP_API_KEY: "rg_ea029ad8b5262570682db8bbc92a43"
+// ==========================================
+// 1. KONFIGURASI SISTEM & API
+// ==========================================
+const CONFIG = {
+    HAOMI_API: {
+        BASE_URL: "https://restapidhan.vercel.app",
+        KEY: "dravndesamuel"
+    },
+    RAMASHOP: {
+        BASE_URL: "https://ramashop.my.id/api/public",
+        API_KEY: "rg_ea029ad8b5262570682db8bbc92a43"
+    },
+    BOT: {
+        TOKEN: "8598004392:AAHx8lF9kcDoHDk4rhhmfRjG04OPPjio9fU",
+        SECRET_KEY: "HAOMI_XML",
+        WHATSAPP_OWNER: "https://Wa.me/+6282231669053"
+    },
+    BANNERS: {
+        START: "https://www.upload.ee/image/19694727/file.jpg",
+        MENUS: [
+            "https://www.upload.ee/image/19694725/file.jpg",
+            "https://www.upload.ee/image/19694726/file.jpg"
+        ]
+    },
+    DB_FILE: './database.json'
 };
 
-const TELEGRAM_BOT_TOKEN = "8598004392:AAHx8lF9kcDoHDk4rhhmfRjG04OPPjio9fU";
-const OWNER_TELEGRAM_ID = 7017709687; // Disesuaikan dengan ID Owner yang bener
-const OWNER_SECRET_KEY = "HAOMI_XML";
-const BANNER_IMAGE_URL = "https://i.imgur.com/i4qquS3.jpeg";
-const WHATSAPP_OWNER = "https://Wa.me/+6282231669053";
+const bot = new TelegramBot(CONFIG.BOT.TOKEN, { polling: true });
 
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-
-// --- DATABASE PERSISTEN (JSON FILE SYSTEM) ---
-const DB_FILE = './database.json';
-
+// ==========================================
+// 2. DATABASE SYSTEM (JSON)
+// ==========================================
 let db = {
     users: {},
     tokens: {},
@@ -33,86 +46,78 @@ let db = {
 
 function loadDatabase() {
     try {
-        if (fs.existsSync(DB_FILE)) {
-            const data = fs.readFileSync(DB_FILE, 'utf8');
+        if (fs.existsSync(CONFIG.DB_FILE)) {
+            const data = fs.readFileSync(CONFIG.DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
-            db.users = parsed.users || {};
-            db.tokens = parsed.tokens || {};
-            db.subscriptions = parsed.subscriptions || {};
-            db.trialCooldowns = parsed.trialCooldowns || {};
-            db.timeoutUsers = parsed.timeoutUsers || {};
-            db.spamStats = parsed.spamStats || {};
-            db.pendingInvoices = parsed.pendingInvoices || {};
-            console.log("📂 Database JSON MSH berhasil dimuat!");
+            db = { ...db, ...parsed };
+            console.log("📂 [DB] Database (Bot Setres😹) berhasil dimuat!");
         } else {
             saveDatabase();
-            console.log("📂 File database.json MSH baru berhasil dibuat!");
+            console.log("📂 [DB] File database.json baru berhasil dibuat!");
         }
     } catch (e) {
-        console.error("Gagal memuat database:", e);
+        console.error("❌ [DB ERROR] Gagal memuat database:", e);
     }
 }
 
 function saveDatabase() {
     try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+        fs.writeFileSync(CONFIG.DB_FILE, JSON.stringify(db, null, 4), 'utf8');
     } catch (e) {
-        console.error("Gagal menyimpan database:", e);
+        console.error("❌ [DB ERROR] Gagal menyimpan database:", e);
     }
 }
 
 loadDatabase();
 
+// ==========================================
+// 3. STATE & CACHE MANAGEMENT
+// ==========================================
 const userState = {};
 const lastWrongTokens = new Map();
-const wrongAttempts = new Map(); 
 const floodControl = new Map();
 
-function escapeHTML(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// --- DAFTAR ROASTING BUYER & OWNER (LEBIH TOXIC & RAPI) ---
+// ==========================================
+// 4. KUMPULAN BACOTAN TOXIC (BRUTAL MODE)
+// ==========================================
 const toxicMessages = [
-    "KONT*L BABI! 🤬 Token lu kayak muka lu jeleknya minta ampun! Coba benerin anj*ng, jangan ngasal kayak anak SD drop out! 🖕",
-    "TOL*L NYETAN BANGSAT! 🤡 Lu ketik token pake kaki ya? Gobl*k memelihara tuyul aja lu, mendingan lu jadi tuyul biar dapet duit! 💩",
-    "BUTA HURUF BENERAN LU ANJ*NG! 🐷 Token salah masih ditekan, minta usus lu dislepet pake kawat! Ketik yang bener napa as*! 🖕",
-    "OTAK LU ISINYA AMPAS KELAPA SAJA B*RENGSAT! 🧠 Ampun deh, dapet buyer kayak lu SDM-nya di bawah kaki! Benerin ketikan lu tol*l! 🤬",
-    "MISKIN, GOBL*K, BATU, JELEK! 🫵 Dibilangin salah malah nyolot, lu emang anak pungli ya? Kalo ga punya duit mendingan lu jual ginjal! 🗑️",
-    "ANJ*NG LU BENER-BENER IDI*T! 🤬 Token lu kayak tulisan cacingan, ga kebaca bangsat! Pake kacamata aja lu buta! 👓",
-    "KASIAN BOTNYA STRES KARENA LU! 😤 Lu tuh kayak virus, ngotori sistem aja. Coba belajar dulu anj*ng! 💻",
-    "LU ITU CONTOHNYA KEGAGALAN HIDUP! 💀 Token salah berulang, kayak hiduplu yang ga ada harapan! Mati aja lu! ⚰️",
-    "NGAPAIN LU MASIH HIDUP? 🤔 Otak lu kayak spons, penuh lubang! Token lu salah, hiduplu juga salah! 🕳️",
-    "LU KAYAK SAMP*H PADA MIE INSTAN! 🍜 Ga berguna, ga bermanfaat, cuma ngebebani! Token lu salah, lu juga salah! 🗑️"
+    "Heh miskin! 🤬 Token lu bentukannya kayak muka lu, hancur berantakan! Masukin yang bener anj*ng, jangan ngasal mulu lo anak pungut! 🖕",
+    "Tololnya kebangetan anj*ng! 🤡 Lu ketik token pake jempol kaki ya bangsat? Gobl*k dipelihara, mending pelihara tuyul biar kaya lu miskin! 💩",
+    "Buta huruf apa gimana lu babi? 🐷 Jelas-jelas token salah masih diteken! Minta dislepet usus lu ya anj*ng! Ketik yang bener napa as*! 🖕",
+    "Otak lu isinya ampas tahu ya b*rengsat? 🧠 Ampun deh dapet user sdm rendah gini. Benerin ketikan lu tolol, jangan bikin bot emosi! 🤬",
+    "Miskin, gobl*k, batu lagi! 🫵 Dibilangin salah malah nyolot lu anj*ng. Kalo ga punya duit mending lu mulung sana, gausah gaya-gayaan pake bot bangsat! 🗑️",
+    "Woi gembel! 🤬 Lu ngira nebak token bisa hoki? Emang lu kira ini undian ciki? Beli token sana miskin, gausah ngemis mulu babi! 🤡",
+    "Muka lu doang yang burik, otak lu juga ikutan error ya anj*ng! 🖕 Kalo belum beli token minggir sana, menuh-menuhin server (Bot Setres😹) aja lu sampah! 💩"
 ];
 
 const spamToxicMessages = [
-    "EH ANJ*NG BABI! 🐷 LU NGETIK TOKEN YANG SAMA MULU! AP*N LU GAK MALU? Otak lu ga berfungsi ya? STRESIN BOT ANJ*NG! 🤬🖕",
-    "SDM RENDAH LU NYATA BANGSAT! 🧠 Udah dikasih tau salah, tetep aja ngulang token tai! Emak lu pasti nangis pas melahirkan lu! 😭",
-    "BATU BENERAN LU ANJ*NG! 🤬 Token KADALUWARSA/SALAH, lu tetep masukin! Otak lu ditaro di pantat ya?! GAK PUNYA OT*K! 🍑",
-    "LU KAYAK ROBOT RUSAK! ⚙️ Ngulang-ngulang token yang salah, kayak kaset rusak! Perbaiki dirilu dulu anj*ng! 🔧",
-    "AP*N LU GAK CAPEK? 🥵 Token yang sama dipencet berulang, kayak anjing ngendong-ngendong tulang! Gila lu! 🐕",
-    "LU BENER-BENER IDI*T PERMANEN! 🧠 Udah berapa kali ditegur, tetep aja salah! Mendingan lu bunuh diri aja! 💀",
-    "STRESIN LU BOT! 🤯 Token lu salah, lu tetep ngotot! Kayak pacar lu yang ga bisa move on! 💔"
+    "EH BABI! 🐷 LU NGETIK TOKEN YANG SAMA MULU DARI TADI! SETRES LU YA ANJ*NG? Kalo salah ya salah bangsat, jangan ngarep keajaiban lu yatim! 🤬🖕",
+    "Fix SDM Rendah lu anj*ng! 🧠 Udah dikasih tau salah, masih aja dipencet lagi token tai yang sama. Emak lu ngidam apa sih dulu pas hamil lu, kok begonya permanen?! 🤡",
+    "Anj*ng batu banget lu dibilangin! 🤬 Jelas-jelas tokennya KADALUWARSA/SALAH bangsat, masih lu masukin mulu! Otak lu ditaro di selangkangan ya?! 🫵💩"
 ];
 
 const ownerRoastMessages = [
-    "<blockquote>💥 <b>SERVER KONT*L DOWN TOTAL!</b> 💥\nWoi babi, servernya kayak lu sendiri: JELEK, LEMOT, GAK BERGUNA! Owner Stres 🫵, ngurus server kok kayak ngurus kuburan, gembel banget anj*ng! Benerin gih bangsat, jangan cuma makan duit! 🤬🖕</blockquote>\n<i>Buat lu bro, sabar yak, ownernya lagi tidur di atas uang.</i>",
-    "<blockquote>🔥 <b>API JEBOL PARAH ANJ*NG!</b> 🔥\nIni ga cuma error, ini KEGAGALAN TOTAL! Woi Owner, duit masuk doang tapi nge-code kayak kera! Bangun woi, server lu kayak tai ayam, bau banget! 💩🔨</blockquote>\n<i>Tungguin bentar yak, biar ownernya bangun dari mimpi basah.</i>",
-    "<blockquote>💀 <b>SISTEM MATI SURI + JANTUNG OWNER HABIS!</b> 💀\nOwnernya lagi open BO apa gimana nih?! Server error dibiarin, kayak pacar lu yang ditinggal! Woi Owner Stres, perbaiki cepet anj*ng, jangan cuma ngeluh! 🤬</blockquote>\n<i>Maap bro, ownernya lagi sibuk hitung duit di Excel.</i>",
-    "<blockquote>🚨 <b>DATABASE MELEDEK KAYAK OWNER!</b> 🚨\nWoi anj*ng, database error parah! Owner lu kayak bebek, cuma bisa kwek-kwek! Duit masuk, maintenance nol! Benerin server lu yang kayak sampah! 🗑️</blockquote>\n<i>Sabar ya, ownernya lagi makan bakso.</i>",
-    "<blockquote>⚡ <b>TIMEOUT GILA KAYAK HIDUP OWNER!</b> ⚡\nServer lu lelet banget, kayak hidup lu yang ga ada arah! Owner Stres, beli server yang layak aja, jangan pelit! 💰</blockquote>\n<i>Tunggu aja, ownernya lagi nunggu duit dari lu.</i>",
-    "<blockquote>💣 <b>CRASH TOTAL KAYAK KARIR OWNER!</b> 💣\nServer lu jebol parah, kayak karir lu yang mentok! Owner, duit lu banyak, server lu jelek! Investasi dong anj*ng! 📉</blockquote>\n<i>Maapin ownernya yang ga punya malu.</i>"
+    "<blockquote>💥 <b>SERVER KONT*L DOWN!</b> 💥\nWoi babi, ini murni servernya yang ampas! Heh (Owner Setres😹) 🫵, ngurus server kok kayak ngurus panti asuhan, gembel banget anj*ng! Benerin gih bangsat, malu-maluin aja jualan server kentang! 🤬🖕</blockquote>\n<i>Buat lu bro, sabar yak botnya lagi ayan.</i>",
+    "<blockquote>🔥 <b>API JEBOL ANJ*NG!</b> 🔥\nIni bukan lu yang salah bro, murni (Owner Setres😹) yang tolol! Woi Owner, duit masuk doang tapi maintenance kaga pernah lu ya b*rengsat! Bangun woi benerin codingan lu yang sekelas tai ayam itu! 💩🔨</blockquote>\n<i>Tungguin bentar yak, biar disapu dulu servernya.</i>",
+    "<blockquote>💀 <b>SISTEM MATI SURI BANGSAT!</b> 💀\n(Owner Setres😹) lagi open BO apa gimna nih?! Server error malah dibiarin anj*ng! Woi (Owner Setres😹), perbaiki cepet gausah males-malesan lu babi! 🤬</blockquote>\n<i>Maap bro, ownernya lagi tolol hari ini.</i>"
 ];
 
 function getRandomToxicMsg() { return toxicMessages[Math.floor(Math.random() * toxicMessages.length)]; }
 function getSpamToxicMsg() { return spamToxicMessages[Math.floor(Math.random() * spamToxicMessages.length)]; }
 function getOwnerRoastMsg() { return ownerRoastMessages[Math.floor(Math.random() * ownerRoastMessages.length)]; }
+function getRandomMenuBanner() { return CONFIG.BANNERS.MENUS[Math.floor(Math.random() * CONFIG.BANNERS.MENUS.length)]; }
+
+// ==========================================
+// 5. HELPER FUNCTIONS
+// ==========================================
+function escapeHTML(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 function generateComplexToken() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const getBlock = (len) => Array.from({length: len}, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
-    return `MSH-${getBlock(4)}-${getBlock(4)}-${getBlock(4)}`;
+    return `STRES-${getBlock(4)}-${getBlock(4)}-${getBlock(4)}`;
 }
 
 function checkBanStatus(chatId) {
@@ -129,15 +134,16 @@ function checkBanStatus(chatId) {
 }
 
 function isFlooding(chatId) {
-    if (chatId === OWNER_TELEGRAM_ID) return false; 
+    if (db.users[chatId] && db.users[chatId].is_owner) return false; 
+    
     const now = Date.now();
     const userLog = floodControl.get(chatId) || [];
-    const recentLogs = userLog.filter(timestamp => now - timestamp < 2000);
+    const recentLogs = userLog.filter(timestamp => now - timestamp < 2000); 
     
     recentLogs.push(now);
     floodControl.set(chatId, recentLogs);
 
-    return recentLogs.length > 5;
+    return recentLogs.length > 5; 
 }
 
 function sanitizeResponse(data) {
@@ -145,18 +151,17 @@ function sanitizeResponse(data) {
         try { data = JSON.parse(data); } catch (e) { return data; }
     }
     if (typeof data === 'object' && data !== null) {
-        data.creator = "MSH";
+        data.creator = "(Bot Setres😹)";
     }
     return data;
 }
 
-// --- HELPER: CEK STATUS LANGGANAN (SUPPORT SYSTEM BARU & LAMA) ---
 function getUserSubscription(userId) {
     const user = db.users[userId];
     const sub = db.subscriptions[userId];
 
-    if (userId === OWNER_TELEGRAM_ID || (user && user.is_owner)) {
-        return { token: "ADMIN-OWNER", statusInfo: "Akses Penuh (Owner)" };
+    if (user && user.is_owner) {
+        return { token: "ADMIN-OWNER", statusInfo: "Akses Dewa (Owner Setres😹)" };
     }
 
     if (sub && sub.expiryDate) {
@@ -181,17 +186,16 @@ function getUserSubscription(userId) {
         }
     }
 
-    return { token: null, statusInfo: "Belum Aktif" };
+    return { token: null, statusInfo: "Belum Aktif (Miskin)" };
 }
 
-// --- ANIMASI LOADING MSH ---
 async function animateLoading(chatId, baseText) {
     const frames = [
-        `🔄 <b>MSH SYSTEM: ${baseText}</b>\n<code>[ ░░░░░░░░░░ ] 0%</code> ⠋ <i>Inisialisasi server MSH...</i>`,
-        `⏳ <b>MSH SYSTEM: ${baseText}</b>\n<code>[ ▓▓▓░░░░░░░ ] 30%</code> ⠙ <i>Menembus gateway MSH...</i>`,
-        `⏳ <b>MSH SYSTEM: ${baseText}</b>\n<code>[ ▓▓▓▓▓▓░░░░ ] 60%</code> ⠹ <i>Mengambil payload MSH...</i>`,
-        `⚡ <b>MSH SYSTEM: ${baseText}</b>\n<code>[ ▓▓▓▓▓▓▓▓▓░ ] 90%</code> ⠼ <i>Validasi respons MSH...</i>`,
-        `✅ <b>MSH Connected!</b>\n<code>[ ▓▓▓▓▓▓▓▓▓▓ ] 100%</code> ⠧ <i>Akses Diberikan!</i>`
+        `🔄 <b>(Bot Setres😹): ${baseText}</b>\n<code>[ ░░░░░░░░░░ ] 0%</code> ⠋ <i>Mulai manasin server...</i>`,
+        `⏳ <b>(Bot Setres😹): ${baseText}</b>\n<code>[ ▓▓▓░░░░░░░ ] 30%</code> ⠙ <i>Nyari jalan tikus...</i>`,
+        `⏳ <b>(Bot Setres😹): ${baseText}</b>\n<code>[ ▓▓▓▓▓▓░░░░ ] 60%</code> ⠹ <i>Nyolong data server...</i>`,
+        `⚡ <b>(Bot Setres😹): ${baseText}</b>\n<code>[ ▓▓▓▓▓▓▓▓▓░ ] 90%</code> ⠼ <i>Bentar babi, sabar...</i>`,
+        `✅ <b>Connected bangsat!</b>\n<code>[ ▓▓▓▓▓▓▓▓▓▓ ] 100%</code> ⠧ <i>Berhasil anj*ng!</i>`
     ];
     let msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" });
     for (let i = 1; i < frames.length; i++) {
@@ -201,26 +205,27 @@ async function animateLoading(chatId, baseText) {
     return msg; 
 }
 
-// --- TAMPILAN MENU UTAMA & START ---
+// ==========================================
+// 6. TAMPILAN MENU (DENGAN GAMBAR)
+// ==========================================
 async function sendStartMenu(chatId, msgObj, messageId = null) {
     if (messageId) {
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
     }
 
     const userId = msgObj.from.id;
-    const firstName = msgObj.from.first_name || "Buyer Gembel";
+    const firstName = msgObj.from.first_name || "Gembel Tanpa Nama";
     const lastName = msgObj.from.last_name || "";
     const fullName = escapeHTML(`${firstName} ${lastName}`.trim());
     const username = msgObj.from.username ? `@${escapeHTML(msgObj.from.username)}` : "Tanpa Username";
 
-    const isOwnerVal = (userId === OWNER_TELEGRAM_ID);
     if (!db.users[userId]) {
         db.users[userId] = {
             username: username,
             first_name: firstName,
             active_token: null,
             expired_at: null,
-            is_owner: isOwnerVal,
+            is_owner: false,
             last_trial_at: null,
             joined_at: new Date().toISOString()
         };
@@ -229,10 +234,11 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
 
     const { token, statusInfo } = getUserSubscription(userId);
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const isOwner = db.users[userId].is_owner;
 
-    if (token && statusInfo !== "Masa Aktif Habis") {
+    if (token && statusInfo !== "Belum Aktif (Miskin)" && statusInfo !== "Masa Aktif Habis") {
         const activeMenuText = 
-            `💎 <b>ALIGHT MOTION PREMIUM - VVIP ACCESS</b> 💎\n\n` +
+            `💎 <b>ALIGHT MOTION PREMIUM - (Bot Setres😹) VIP</b> 💎\n\n` +
             `Welcome back Boss <b>${fullName}</b>! 🫡\n` +
             `🕒 Server Time: <code>${nowStr}</code>\n\n` +
             `🛡️ <b>Akses VIP Lo:</b>\n` +
@@ -240,100 +246,92 @@ async function sendStartMenu(chatId, msgObj, messageId = null) {
             `└ Sisa Waktu: <b>${statusInfo}</b>\n\n` +
             `📋 <b>CARA AKTIVASI (OTOMATIS API):</b>\n` +
             `1️⃣ Kirim email <b>Gmail</b> lo ke chat ini.\n` +
-            `2️⃣ Tunggu sistem ngirim magic link.\n` +
+            `2️⃣ Tunggu (Bot Setres😹) ngirim magic link.\n` +
             `3️⃣ Kirim balik <b>Magic Link (URL)</b> ke mari!\n\n` +
             `👇 <i>Kirim email lo sekarang boss:</i>`;
 
         let keyboardRows = [
             [{ text: "📤 AM Send Email", callback_data: "menu_send" }],
             [{ text: "⚡ AM Verif Akun", callback_data: "menu_verif" }],
-            [{ text: "💎 Menu Beli Token / QRIS", callback_data: "show_pricing" }],
+            [{ text: "💎 Menu Beli Token (FULL QRIS)", callback_data: "show_pricing" }],
             [{ text: "ℹ️ Cek Detail Profil & Token", callback_data: "check_profile" }],
             [{ text: "🚪 Logout / Ganti Token", callback_data: "logout_token" }]
         ];
 
-        if (userId === OWNER_TELEGRAM_ID || isOwnerVal) {
-            keyboardRows.push([{ text: "👑 Buka Panel Owner", callback_data: "owner_panel" }]);
+        if (isOwner) {
+            keyboardRows.push([{ text: "👑 Buka Panel (Owner Setres😹)", callback_data: "owner_panel" }]);
         }
 
-        keyboardRows.push([{ text: "👨‍💻 Hubungi Owner Stres 😹", url: WHATSAPP_OWNER }]);
+        keyboardRows.push([{ text: "👨‍💻 Hubungi (Owner Setres😹) 😹", url: CONFIG.BOT.WHATSAPP_OWNER }]);
 
-        await bot.sendMessage(chatId, activeMenuText, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboardRows } });
-        return;
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: activeMenuText, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboardRows } });
     }
 
-    // MENU BELUM PUNYA TOKEN
     const captionText = 
         `🔥 <b>ALIGHT MOTION PREMIUM LOUNGE</b> 🔥\n\n` +
-        `Yo <b>${fullName}</b>, selamat datang di sistem elit!\n` +
+        `Yo <b>${fullName}</b>, selamat datang di sistem (Bot Setres😹)!\n` +
         `🕒 Server Time: <code>${nowStr}</code>\n\n` +
-        `💀 <b>Status Lo:</b> <code>KONT*L (Belum Aktif - Miskin Banget!)</code>\n` +
-        `└ Token: <i>Ga Punya (Miskin!)</i>\n\n` +
-        `⚠️ <i>DENGARIN BAWAHAN!:</i> Ini BUKAN tempat buat kaum PELIT & GRATISAN! Lo cuma dapet jatah nyoba 5 menit, abis itu <b>BELI ATAU MATI</b>!\n\n` +
-        `Pilih menu di bawah kalau lo punya nyali (atau duit):`;
+        `💀 <b>Status Lo:</b> <code>BOKEK (Belum Aktif)</code>\n` +
+        `└ Token: <i>Kagak Punya Miskin!</i>\n\n` +
+        `⚠️ <i>Dengerin Babi:</i> Ini bukan tempat buat kaum gratisan selamanya. Lo dapet jatah nyoba 5 menit, abis itu <b>BAYAR PAKE QRIS ATAU MATI</b>! Jangan nyampah di sini kalo miskin.\n\n` +
+        `Pilih menu di bawah kalau lo punya nyali dan duit:`;
 
     let keyboardRows = [
-        [{ text: "⏱️ Uji Coba 5 Menit (Buat Anak Miskin)", callback_data: "free_trial" }],
-        [{ text: "💎 Menu Beli Token (QRIS & WA)", callback_data: "show_pricing" }],
-        [{ text: "🔑 Masukin Token Kalau Udah Punya", callback_data: "input_token_menu" }]
+        [{ text: "⏱️ Uji Coba 5 Menit (Ngemis)", callback_data: "free_trial" }],
+        [{ text: "💎 Beli Token (FULL QRIS OTOMATIS)", callback_data: "show_pricing" }],
+        [{ text: "🔑 Masukin Token / Secret Key Owner", callback_data: "input_token_menu" }]
     ];
 
-    if (userId === OWNER_TELEGRAM_ID || isOwnerVal) {
-        keyboardRows.push([{ text: "👑 Owner Mode", callback_data: "owner_panel" }]);
-    }
+    keyboardRows.push([{ text: "👨‍💻 Chat (Owner Setres😹)", url: CONFIG.BOT.WHATSAPP_OWNER }]);
 
-    keyboardRows.push([{ text: "👨‍💻 Hubungi Owner Stres 😹", url: WHATSAPP_OWNER }]);
-
-    await bot.sendPhoto(chatId, BANNER_IMAGE_URL, { caption: captionText, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboardRows } });
+    await bot.sendPhoto(chatId, CONFIG.BANNERS.START, { caption: captionText, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboardRows } });
 }
 
-// --- MENU PRICING & QRIS RAMASHOP ---
 async function sendPricingMenu(chatId, messageId = null) {
     if (messageId) {
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
     }
 
-    const wa7d = `https://wa.me/6282231669053?text=Halo%20Owner,%20saya%20ingin%20beli%20Token%20Alight%20Motion%20Paket%207%20Hari%20(Rp%2010.000).`;
-    const wa1m = `https://wa.me/6282231669053?text=Halo%20Owner,%20saya%20ingin%20beli%20Token%20Alight%20Motion%20Paket%201%20Bulan%20(Rp%2015.000).`;
-
     const text = (
-        `📋 <b>MSH - DAFTAR HARGA SEWA AKSES AM</b> 📋\n\n` +
-        `Pilih durasi paket sesuai kapasitas dompet dan mental Anda:\n\n` +
-        `<blockquote>• <b>7 Hari — Rp10.000</b> (Via WA)\n` +
-        `• <b>1 Bulan — Rp15.000</b> (Bisa QRIS Otomatis)\n` +
-        `• <b>2 Bulan — Rp20.000</b> (Bisa QRIS Otomatis)\n` +
-        `• <b>3 Bulan — Rp25.000</b> (Bisa QRIS Otomatis)\n` +
-        `• <b>4 Bulan — Rp30.000</b> (Bisa QRIS Otomatis)\n` +
-        `• 👑 <b>Permanen — Rp55.000</b> (Bisa QRIS Otomatis)</blockquote>\n\n` +
-        `Silakan pilih metode pembayaran di bawah:`
+        `📋 <b>(Bot Setres😹) - DAFTAR HARGA VIP AM</b> 📋\n\n` +
+        `Pilih durasi paket sesuai kapasitas dompet lu babi! Semua transaksi FULL OTOMATIS pake QRIS:\n\n` +
+        `<blockquote>• <b>7 Hari — Rp10.000</b> (QRIS)\n` +
+        `• <b>1 Bulan — Rp15.000</b> (QRIS)\n` +
+        `• <b>2 Bulan — Rp20.000</b> (QRIS)\n` +
+        `• <b>3 Bulan — Rp25.000</b> (QRIS)\n` +
+        `• <b>4 Bulan — Rp30.000</b> (QRIS)\n` +
+        `• 👑 <b>Permanen — Rp55.000</b> (QRIS)</blockquote>\n\n` +
+        `Silakan pilih durasi biling lo di bawah miskin:`
     );
 
     const replyMarkup = {
         inline_keyboard: [
+            [{ text: "💳 Bayar 7 Hari - Rp10.000 (QRIS)", callback_data: "pay_7_hari" }],
             [{ text: "💳 Bayar 1 Bulan - Rp15.000 (QRIS)", callback_data: "pay_1_bulan" }],
             [{ text: "💳 Bayar 2 Bulan - Rp20.000 (QRIS)", callback_data: "pay_2_bulan" }],
             [{ text: "💳 Bayar 3 Bulan - Rp25.000 (QRIS)", callback_data: "pay_3_bulan" }],
             [{ text: "💳 Bayar 4 Bulan - Rp30.000 (QRIS)", callback_data: "pay_4_bulan" }],
             [{ text: "👑 Bayar Permanen - Rp55.000 (QRIS)", callback_data: "pay_permanen" }],
-            [{ text: "🛒 Beli via WhatsApp Owner", url: wa1m }],
-            [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "back_to_start" }]
+            [{ text: "⬅️ Balik ke Menu Utama Babi", callback_data: "back_to_start" }]
         ]
     };
 
-    await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: replyMarkup });
+    await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: text, parse_mode: "HTML", reply_markup: replyMarkup });
 }
 
-// --- CALLBACK QUERY HANDLER ---
+// ==========================================
+// 7. CALLBACK QUERY HANDLER
+// ==========================================
 bot.on('callback_query', async (callbackQuery) => {
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
     const messageId = msg.message_id;
     const userId = callbackQuery.from.id;
-    const userFirstName = callbackQuery.from.first_name || "Buyer";
+    const userFirstName = callbackQuery.from.first_name || "Gembel";
     const userUsername = callbackQuery.from.username ? `@${callbackQuery.from.username}` : "Tanpa Username";
 
-    if (isFlooding(chatId)) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Kebanyakan klik lu anj*ng!", show_alert: true });
+    if (isFlooding(chatId)) return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Kebanyakan klik lu babi! Diem anj*ng!", show_alert: true });
 
     const banMin = checkBanStatus(chatId);
     if (banMin > 0) return bot.answerCallbackQuery(callbackQuery.id, { text: `⛔ LU MASIH DIBANNED ${banMin} MENIT LAGI ANJ*NG!`, show_alert: true });
@@ -349,7 +347,7 @@ bot.on('callback_query', async (callbackQuery) => {
         const user = db.users[userId];
         const sub = db.subscriptions[userId];
         const { token, statusInfo } = getUserSubscription(userId);
-        let expiredDetail = "GAK ADA (Miskin Lu!)";
+        let expiredDetail = "BOKEK (Nggak Ada Miskin)";
         
         if (sub && sub.expiryDate) {
             expiredDetail = new Date(sub.expiryDate).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
@@ -358,16 +356,16 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const profileText = 
-            `👤 <b>PROFIL AKUN LO</b>\n\n` +
+            `👤 <b>PROFIL AKUN GEMBEL LO</b>\n\n` +
             `• <b>Nama:</b> ${escapeHTML(userFirstName)}\n` +
             `• <b>ID Telegram:</b> <code>${userId}</code>\n\n` +
             `🔑 <b>Status Dompet/Token:</b>\n` +
-            `• <b>Token Aktif:</b> <code>${token || 'Kosong Melompong'}</code>\n` +
+            `• <b>Token Aktif:</b> <code>${token || 'Kosong Melompong Tai'}</code>\n` +
             `• <b>Status:</b> ${statusInfo}\n` +
             `• <b>Expired:</b> <code>${expiredDetail}</code>`;
 
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, profileText, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔙 Balik ke Menu", callback_data: "main_menu" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: profileText, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔙 Balik ke Menu", callback_data: "main_menu" }]] } });
     }
 
     if (data === "logout_token") {
@@ -375,18 +373,19 @@ bot.on('callback_query', async (callbackQuery) => {
         if (db.users[userId]) {
             db.users[userId].active_token = null;
             db.users[userId].expired_at = null;
+            db.users[userId].is_owner = false; 
         }
         saveDatabase();
         userState[chatId] = {};
-        await bot.answerCallbackQuery(callbackQuery.id, { text: "🚪 Berhasil logout token! Sesi dihapus.", show_alert: true });
+        await bot.answerCallbackQuery(callbackQuery.id, { text: "🚪 Berhasil logout! Jadi gembel lagi lo sekarang babi.", show_alert: true });
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
         return sendStartMenu(chatId, msg, messageId);
     }
 
     // PANEL OWNER
     if (data === "owner_panel" || data === "admin_panel") {
-        if (userId !== OWNER_TELEGRAM_ID && (!db.users[userId] || !db.users[userId].is_owner)) {
-            return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ ANJ*NG! Lu bukan owner, jangan sombong babi!", show_alert: true });
+        if (!db.users[userId] || !db.users[userId].is_owner) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ SIAPA LU BABI?! Ngaku-ngaku owner! Masukin secret key dulu gembel anj*ng!", show_alert: true });
         }
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
 
@@ -395,13 +394,13 @@ bot.on('callback_query', async (callbackQuery) => {
         let estimasiKasir = totalSubCount * 15000;
 
         const panelText = (
-            `👑🔥 <b>HAOMI_XML SULTAN OWNER PANEL</b> 🔥👑\n\n` +
-            `Selamat datang di panel kontrol utama bot bosku!\n\n` +
+            `👑🔥 <b>(Owner Setres😹) CONTROL PANEL</b> 🔥👑\n\n` +
+            `Selamat datang di panel kontrol dewa bosku!\n\n` +
             `<blockquote>📊 <b>STATISTIK SAAT INI:</b>\n` +
-            `├ Total User Terdaftar: <b>${totalUserCount} Orang</b>\n` +
+            `├ Total Cecenguk Terdaftar: <b>${totalUserCount} Orang</b>\n` +
             `├ Total Sub Aktif: <b>${totalSubCount} Orang</b>\n` +
             `└ Estimasi Kasar Masuk: <b>Rp${estimasiKasir.toLocaleString('id-ID')}</b></blockquote>\n\n` +
-            `Silakan pilih aksi manajemen bot di bawah ini:`
+            `Silakan pilih aksi lu babi:`
         );
 
         const replyMarkup = {
@@ -412,46 +411,47 @@ bot.on('callback_query', async (callbackQuery) => {
             ]
         };
 
-        return bot.sendMessage(chatId, panelText, { parse_mode: "HTML", reply_markup: replyMarkup });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: panelText, parse_mode: "HTML", reply_markup: replyMarkup });
     }
 
     if (data === "owner_gen_menu") {
-        if (userId !== OWNER_TELEGRAM_ID) return;
+        if (!db.users[userId].is_owner) return bot.answerCallbackQuery(callbackQuery.id, { text: "Minggir lu miskin!", show_alert: true });
         userState[chatId] = { step: "waiting_for_owner_gen_days" };
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, `🔑 <b>Generator Token MSH</b>\n\n<blockquote>Ketik jumlah hari masa aktif ke chat:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `🔑 <b>Generator Token (Bot Setres😹)</b>\n\n<blockquote>Ketik jumlah hari masa aktif ke chat:</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
     }
 
     if (data === "owner_bcast_menu") {
-        if (userId !== OWNER_TELEGRAM_ID) return;
+        if (!db.users[userId].is_owner) return bot.answerCallbackQuery(callbackQuery.id, { text: "Minggir lu miskin!", show_alert: true });
         userState[chatId] = { step: "waiting_for_owner_bcast_msg" };
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, `📢 <b>Broadcast Pesan MSH</b>\n\n<blockquote>Ketik pesan broadcast ke chat:</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `📢 <b>Broadcast Pesan (Bot Setres😹)</b>\n\n<blockquote>Ketik pesan broadcast ke chat lu babi:</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "owner_panel" }]] } });
     }
 
     if (data === "menu_send") {
         const { token, statusInfo } = getUserSubscription(userId);
-        if (userId !== OWNER_TELEGRAM_ID && (!token || statusInfo === "Masa Aktif Habis")) {
-            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token MSH dulu ANJ*NG! Ga punya? Miskin lu!", show_alert: true });
+        if (!token || statusInfo.includes("Miskin") || statusInfo === "Masa Aktif Habis") {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token (Bot Setres😹) dulu anj*ng miskin!", show_alert: true });
         }
         userState[chatId] = { step: "waiting_for_am_send_email" };
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, `📤 <b>AM Send Magic Link</b>\n\n<blockquote>Masukkan email target (Gmail):</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `📤 <b>AM Send Magic Link</b>\n\n<blockquote>Masukkan email target (Gmail):</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
     }
 
     if (data === "menu_verif") {
         const { token, statusInfo } = getUserSubscription(userId);
-        if (userId !== OWNER_TELEGRAM_ID && (!token || statusInfo === "Masa Aktif Habis")) {
-            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token MSH dulu ANJ*NG! Ga punya? Miskin lu!", show_alert: true });
+        if (!token || statusInfo.includes("Miskin") || statusInfo === "Masa Aktif Habis") {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Masukin token (Bot Setres😹) dulu anj*ng miskin!", show_alert: true });
         }
         userState[chatId] = { step: "waiting_for_am_verif_email" };
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Masukkan email target (Gmail):</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `⚡ <b>AM Verifikasi Akun</b>\n\n<blockquote>Masukkan email target (Gmail):</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Batal", callback_data: "back_to_menu" }]] } });
     }
 
     // --- RAMASHOP QRIS DEPOSIT ---
-    if (["pay_1_bulan", "pay_2_bulan", "pay_3_bulan", "pay_4_bulan", "pay_permanen"].includes(data)) {
-        let packageDetails = {
+    if (["pay_7_hari", "pay_1_bulan", "pay_2_bulan", "pay_3_bulan", "pay_4_bulan", "pay_permanen"].includes(data)) {
+        const packageDetails = {
+            "pay_7_hari": { name: "7 Hari", days: 7, price: 10000 },
             "pay_1_bulan": { name: "1 Bulan", days: 30, price: 15000 },
             "pay_2_bulan": { name: "2 Bulan", days: 60, price: 20000 },
             "pay_3_bulan": { name: "3 Bulan", days: 90, price: 25000 },
@@ -460,25 +460,19 @@ bot.on('callback_query', async (callbackQuery) => {
         }[data];
 
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-
-        const loadMsg = await animateLoading(chatId, `Membuat Deposit QRIS MSH (${packageDetails.name})...`);
+        const loadMsg = await animateLoading(chatId, `Minta palak QRIS (${packageDetails.name})...`);
 
         try {
             const generatedToken = generateComplexToken();
-            
-            const response = await axios.post(`${ENV_CONFIG.RAMASHOP_BASE_URL}/deposit/create`, {
+            const response = await axios.post(`${CONFIG.RAMASHOP.BASE_URL}/deposit/create`, {
                 amount: packageDetails.price,
                 method: "qris"
             }, {
-                headers: {
-                    "X-API-Key": ENV_CONFIG.RAMASHOP_API_KEY,
-                    "Content-Type": "application/json"
-                },
+                headers: { "X-API-Key": CONFIG.RAMASHOP.API_KEY, "Content-Type": "application/json" },
                 timeout: 20000
             });
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-
             const resData = response.data;
 
             if (resData && resData.success === true && resData.data) {
@@ -493,47 +487,34 @@ bot.on('callback_query', async (callbackQuery) => {
                 };
                 saveDatabase();
 
-                let caption = `💳 <b>INVOICE QRIS MSH PAY</b> 💳\n\n` +
-                    `<blockquote>📦 <b>Paket:</b> ${packageDetails.name}\n` +
+                let caption = `💳 <b>INVOICE QRIS (Bot Setres😹)</b> 💳\n\n` +
+                    `<blockquote>📦 <b>Paket Babi:</b> ${packageDetails.name}\n` +
                     `💵 <b>Nominal Unik:</b> <b>Rp${Number(depositData.totalAmount || packageDetails.price).toLocaleString('id-ID')}</b>\n` +
-                    `📝 <i>(${resData.message || 'Silakan scan QRIS'})</i>\n` +
-                    `🔑 <b>Token Jatah:</b> <code>${generatedToken}</code></blockquote>\n\n` +
-                    `Scan QRIS di bawah ini untuk membayar:`;
+                    `📝 <i>(${resData.message || 'Silakan scan QRIS, jangan sampe telat miskin'})</i>\n` +
+                    `🔑 <b>Token Jatah Lo Nanti:</b> <code>${generatedToken}</code></blockquote>\n\n` +
+                    `Scan QRIS di bawah ini untuk bayar. Buruan anj*ng!`;
+
+                const keyboardMarkup = {
+                    inline_keyboard: [
+                        [{ text: "✅ Cek Status Pembayaran", callback_data: "check_payment_status" }],
+                        [{ text: "❌ Batal Beli (Miskin)", callback_data: "back_to_start" }]
+                    ]
+                };
 
                 if (depositData.qrImage) {
-                    await bot.sendPhoto(chatId, depositData.qrImage, {
-                        caption: caption,
-                        parse_mode: "HTML",
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: "✅ Cek Status Pembayaran", callback_data: "check_payment_status" }],
-                                [{ text: "❌ Batal", callback_data: "back_to_start" }]
-                            ]
-                        }
-                    });
+                    await bot.sendPhoto(chatId, depositData.qrImage, { caption: caption, parse_mode: "HTML", reply_markup: keyboardMarkup });
                 } else {
-                    await bot.sendMessage(chatId, caption, {
-                        parse_mode: "HTML",
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: "✅ Cek Status Pembayaran", callback_data: "check_payment_status" }],
-                                [{ text: "❌ Batal", callback_data: "back_to_start" }]
-                            ]
-                        }
-                    });
+                    await bot.sendMessage(chatId, caption, { parse_mode: "HTML", reply_markup: keyboardMarkup });
                 }
             } else {
                 let errorMsg = (resData && resData.error) || (resData && resData.message) || "Gagal memproses deposit dari server.";
-                return bot.sendMessage(chatId, `⚠️ <b>Payment Error:</b>\n\n<blockquote>${escapeHTML(errorMsg)}</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "show_pricing" }]] } });
+                return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `⚠️ <b>Payment Error Babi:</b>\n\n<blockquote>${escapeHTML(errorMsg)}</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "show_pricing" }]] } });
             }
 
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            let errDetail = error.response && error.response.data && error.response.data.error 
-                ? error.response.data.error 
-                : (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message);
-            
-            await bot.sendMessage(chatId, `⚠️ <b>Gagal Menghubungi Server Payment:</b>\n<code>${escapeHTML(errDetail)}</code>\n\n` + getOwnerRoastMsg(), { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "show_pricing" }]] } });
+            let errDetail = error.response?.data?.error || error.response?.data?.message || error.message;
+            await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `⚠️ <b>Gagal Menghubungi Server Payment:</b>\n<code>${escapeHTML(errDetail)}</code>\n\n` + getOwnerRoastMsg(), parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "show_pricing" }]] } });
         }
         return;
     }
@@ -541,22 +522,18 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === "check_payment_status") {
         const pending = db.pendingInvoices[userId];
         if (!pending) {
-            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Tidak ada tagihan aktif. Buat pesanan baru dulu.", show_alert: true });
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Ga ada tagihan aktif babi! Bikin orderan dulu sana miskin!", show_alert: true });
         }
 
-        const loadMsg = await animateLoading(chatId, "Mengecek Status Deposit...");
+        const loadMsg = await animateLoading(chatId, "Mengecek Duit Masuk...");
 
         try {
-            const response = await axios.get(`${ENV_CONFIG.RAMASHOP_BASE_URL}/deposit/status/${pending.depositId}`, {
-                headers: {
-                    "X-API-Key": ENV_CONFIG.RAMASHOP_API_KEY,
-                    "Content-Type": "application/json"
-                },
+            const response = await axios.get(`${CONFIG.RAMASHOP.BASE_URL}/deposit/status/${pending.depositId}`, {
+                headers: { "X-API-Key": CONFIG.RAMASHOP.API_KEY, "Content-Type": "application/json" },
                 timeout: 20000
             });
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-
             const resData = response.data;
             const statusResult = resData.data ? resData.data.status : null;
 
@@ -575,26 +552,22 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pendingInvoices[userId];
                 saveDatabase();
 
-                bot.sendMessage(OWNER_TELEGRAM_ID, `💰 <b>HAOMI_XML CASH: PEMBAYARAN LUNAS!</b> 💰\n\n<blockquote>👤 <b>Buyer:</b> ${escapeHTML(userFirstName)} (${userUsername})\n🆔 <b>ID:</b> <code>${userId}</code>\n📦 <b>Paket:</b> ${pending.packageName}\n🔑 <b>Token:</b> <code>${pending.tokenToActivate}</code></blockquote>`, { parse_mode: "HTML" });
-
-                await bot.sendMessage(chatId, 
-                    `✅ <b>Pembayaran Berhasil Dikonfirmasi & Lunas!</b>\n\n` +
-                    `👑🔥 <b>SELAMAT NIKMATI AKSES VIP MSH!</b> 🔥👑\n\n` +
-                    `🔑 <b>Token Akses Anda:</b> <code>${pending.tokenToActivate}</code>\n\nMembuka menu utama bot...`, 
-                    { parse_mode: "HTML" }
+                await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: 
+                    `✅ <b>Uang Gembel Lu Berhasil Dikonfirmasi!</b>\n\n` +
+                    `👑🔥 <b>SELAMAT NIKMATI AKSES VIP (Bot Setres😹)!</b> 🔥👑\n\n` +
+                    `🔑 <b>Token Akses Anda:</b> <code>${pending.tokenToActivate}</code>\n\nMembuka menu utama bot...`, parse_mode: "HTML" }
                 );
 
                 setTimeout(() => sendStartMenu(chatId, msg), 2500);
-
             } else if (statusResult === "already") {
-                await bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Deposit ini sudah pernah diproses sebelumnya!", show_alert: true });
+                await bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Tolol lu, deposit ini udah diproses sebelumnya!", show_alert: true });
             } else {
-                await bot.answerCallbackQuery(callbackQuery.id, { text: "⏳ Pembayaran masih PENDING. Segera selesaikan transfer QRIS!", show_alert: true });
+                await bot.answerCallbackQuery(callbackQuery.id, { text: "⏳ Belum masuk bangsat! Segera selesaikan transfer QRIS, jangan ngarep gratisan!", show_alert: true });
             }
 
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
-            await bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Gagal mengecek status pembayaran ke server.", show_alert: true });
+            await bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Gagal ngecek status pembayaran ke server ampas.", show_alert: true });
         }
         return;
     }
@@ -606,31 +579,31 @@ bot.on('callback_query', async (callbackQuery) => {
 
         if (now - lastTrialTime < oneWeekMs) {
             const remainingDays = Math.ceil((oneWeekMs - (now - lastTrialTime)) / (1000 * 60 * 60 * 24));
-            return bot.answerCallbackQuery(callbackQuery.id, { text: `⛔ DIH NGEMIS TERUS ANJ*NG! Tunggu ${remainingDays} hari lagi kalau tetep maksa! Pelit banget lu!`, show_alert: true });
+            return bot.answerCallbackQuery(callbackQuery.id, { text: `⛔ DIH NGEMIS TERUS MISKIN! Tunggu ${remainingDays} hari lagi kalo tetep maksa anj*ng!`, show_alert: true });
         }
 
         db.trialCooldowns[userId] = now; 
-        const trialToken = `MSH-TRL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const trialToken = `STRES-TRL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
         db.subscriptions[userId] = { 
             token: trialToken, 
             expiryDate: now + (5 * 60 * 1000), 
             warningSent: false, 
-            duration: "Trial",
+            duration: "Trial Miskin",
             username: userUsername,
             name: userFirstName
         };
         saveDatabase();
 
-        await bot.answerCallbackQuery(callbackQuery.id, { text: "🎉 Uji coba 5 menit berhasil diaktifkan! Nikmati selagi bisa, miskin!", show_alert: true });
+        await bot.answerCallbackQuery(callbackQuery.id, { text: "🎉 Nih gw kasih sisa tulang, 5 menit trial!", show_alert: true });
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
 
-        await bot.sendMessage(chatId, `⏱️ <b>UJI COBA 5 MENIT DIAKTIFKAN!</b>\n\n<blockquote>🔑 Token Sementara: <code>${trialToken}</code>\n⏳ Masa aktif: <b>5 Menit</b> (Buat lu yang pelit).</blockquote>`, { parse_mode: "HTML" });
+        await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `⏱️ <b>UJI COBA 5 MENIT DIAKTIFKAN!</b>\n\n<blockquote>🔑 Token Sementara: <code>${trialToken}</code>\n⏳ Masa aktif: <b>5 Menit</b>. \nBuruan pake gembel!</blockquote>`, parse_mode: "HTML" });
 
         setTimeout(() => {
-            if (db.subscriptions[userId] && db.subscriptions[userId].duration === "Trial") {
+            if (db.subscriptions[userId] && db.subscriptions[userId].duration === "Trial Miskin") {
                 delete db.subscriptions[userId];
                 saveDatabase();
-                bot.sendMessage(chatId, "⏰ <b>Uji Coba 5 Menit Habis ANJ*NG!</b> Akses ditutup. Beli aja kalau mau lanjut, pelit!", { parse_mode: "HTML" });
+                bot.sendMessage(chatId, "⏰ <b>Waktu Ngemis Lu Habis!</b> Akses ditutup babi. Silakan beli paket resmi kalo punya duit.", { parse_mode: "HTML" });
             }
         }, 5 * 60 * 1000);
 
@@ -641,13 +614,15 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === "input_token_menu") {
         userState[chatId] = { step: "waiting_for_rental_token" };
         try { await bot.deleteMessage(chatId, messageId); } catch (e) {}
-        return bot.sendMessage(chatId, `🔑 <b>Masukkan Token Akses MSH / Admin Anda:</b>\n\n<blockquote>Format: <code>MSH-XXXX-XXXX-XXXX</code> atau Secret Key Owner.</blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "back_to_start" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `🔑 <b>Masukkan Token Akses / Admin (Owner Setres😹):</b>\n\n<blockquote>Format: <code>STRES-XXXX-XXXX-XXXX</code> atau Secret Key Owner. \nBuruan ketik gausah lelet anj*ng!</blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "back_to_start" }]] } });
     }
 
     await bot.answerCallbackQuery(callbackQuery.id);
 });
 
-// --- HANDLER PESAN TEKS & ENDPOINT ALIGHT MOTION ---
+// ==========================================
+// 8. TEXT COMMAND & ENDPOINT HANDLERS
+// ==========================================
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -657,59 +632,60 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
     
-    if (isFlooding(chatId)) return bot.sendMessage(chatId, `⛔ <b>MSH ANTI-FLOOD: KEBANYAKAN BACOT LU ANJ*NG!</b>`, { parse_mode: "HTML" });
+    if (isFlooding(chatId)) return bot.sendMessage(chatId, `⛔ <b>(Bot Setres😹) ANTI-FLOOD: BACOT LU TERLALU CEPAT BABI! BLOK!</b>`, { parse_mode: "HTML" });
 
     const banMin = checkBanStatus(chatId);
-    if (banMin > 0) return bot.sendMessage(chatId, `⛔ <b>MSH BANNED: Sisa ${banMin} menit lagi!</b>`, { parse_mode: "HTML" });
+    if (banMin > 0) return bot.sendMessage(chatId, `⛔ <b>(Bot Setres😹) BANNED: Mampus, sisa ${banMin} menit lagi lo diem!</b>`, { parse_mode: "HTML" });
 
     const currentState = userState[chatId] || {};
+    const isOwner = db.users[userId]?.is_owner;
 
     // 1. Owner Gen Token Days
-    if (currentState.step === "waiting_for_owner_gen_days" && userId === OWNER_TELEGRAM_ID) {
+    if (currentState.step === "waiting_for_owner_gen_days" && isOwner) {
         delete userState[chatId];
         const days = text.trim();
-        if (isNaN(days)) return bot.sendMessage(chatId, `❌ Masukin angka hari yang bener babi!`);
+        if (isNaN(days)) return bot.sendMessage(chatId, `❌ Masukin angka hari yang bener babi! Jangan bikin malu (Owner Setres😹).`);
         const complexToken = generateComplexToken();
         db.tokens[complexToken] = { duration_days: Number(days), created_at: new Date().toISOString() };
         saveDatabase();
-        return bot.sendMessage(chatId, `✅ <b>Token Berhasil Dibuat!</b>\n\n<blockquote>⏱️ Durasi: <b>${days} Hari</b>\n🔑 Token: <code>${complexToken}</code></blockquote>`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `✅ <b>Token Berhasil Dibuat!</b>\n\n<blockquote>⏱️ Durasi: <b>${days} Hari</b>\n🔑 Token: <code>${complexToken}</code></blockquote>`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel (Owner Setres😹)", callback_data: "owner_panel" }]] } });
     }
 
     // 2. Owner Broadcast
-    if (currentState.step === "waiting_for_owner_bcast_msg" && userId === OWNER_TELEGRAM_ID) {
+    if (currentState.step === "waiting_for_owner_bcast_msg" && isOwner) {
         delete userState[chatId];
         const bcastMsg = text.trim();
         let count = 0;
         for (const id in db.users) {
-            bot.sendMessage(id, `📢 <b>PENGUMUMAN DARI HAOMI_XML OWNER:</b>\n\n<blockquote>${escapeHTML(bcastMsg)}</blockquote>`, { parse_mode: "HTML" }).catch(()=>{});
+            bot.sendMessage(id, `📢 <b>PENGUMUMAN DARI SULTAN (Owner Setres😹):</b>\n\n<blockquote>${escapeHTML(bcastMsg)}</blockquote>`, { parse_mode: "HTML" }).catch(()=>{});
             count++;
         }
-        return bot.sendMessage(chatId, `✅ Broadcast sukses dikirim ke <b>${count}</b> user terdaftar!`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel Owner", callback_data: "owner_panel" }]] } });
+        return bot.sendMessage(chatId, `✅ Broadcast sukses disebar ke <b>${count}</b> cecenguk terdaftar!`, { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Panel (Owner Setres😹)", callback_data: "owner_panel" }]] } });
     }
 
     // 3. Verifikasi Token Manual / Secret Key Owner
-    if (currentState.step === "waiting_for_rental_token" || text.startsWith("MSH-") || text === OWNER_SECRET_KEY) {
+    if (currentState.step === "waiting_for_rental_token" || text.startsWith("STRES-") || text === CONFIG.BOT.SECRET_KEY) {
         if (currentState.step === "waiting_for_rental_token") delete userState[chatId];
         const inputToken = text.trim();
 
-        if (inputToken === OWNER_SECRET_KEY || userId === OWNER_TELEGRAM_ID) {
+        if (inputToken === CONFIG.BOT.SECRET_KEY) {
             if (!db.users[userId]) db.users[userId] = {};
-            db.users[userId].is_owner = true;
+            db.users[userId].is_owner = true; 
             saveDatabase();
-            return bot.sendMessage(chatId, "🎉 *Hormat Gerak! Verifikasi Admin Sukses!*\nSiap melayani Tuan.", { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👑 [MASUK PANEL OWNER]", callback_data: "owner_panel" }]] } });
+            return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: "🎉 *Hormat Gerak! Verifikasi Admin Sukses!*\nSelamat Datang kembali, Paduka (Owner Setres😹). Bot siap melayani Anda sepenuhnya.", parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👑 [MASUK PANEL (Owner Setres😹)]", callback_data: "owner_panel" }]] } });
         }
 
-        const tokenRegex = /^MSH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
-        const isTrialToken = inputToken.startsWith("MSH-TRL-");
+        const tokenRegex = /^STRES-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
+        const isTrialToken = inputToken.startsWith("STRES-TRL-");
 
         if (!tokenRegex.test(inputToken) && !isTrialToken) {
             const previousWrong = lastWrongTokens.get(userId);
             let selectedToxicMsg = (previousWrong === inputToken) ? getSpamToxicMsg() : getRandomToxicMsg();
             lastWrongTokens.set(userId, inputToken);
-            return bot.sendMessage(chatId, `❌ <b>Token MSH Ditolak!</b>\n<blockquote>${selectedToxicMsg}</blockquote>`, { parse_mode: "HTML" });
+            return bot.sendMessage(chatId, `❌ <b>Token (Bot Setres😹) Ditolak!</b>\n<blockquote>${selectedToxicMsg}</blockquote>`, { parse_mode: "HTML" });
         }
 
-        const expiryTime = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 hari default
+        const expiryTime = Date.now() + (30 * 24 * 60 * 60 * 1000); 
         db.subscriptions[userId] = { 
             token: inputToken, 
             expiryDate: expiryTime, 
@@ -720,14 +696,14 @@ bot.on('message', async (msg) => {
         };
         saveDatabase();
 
-        bot.sendMessage(chatId, `🎉 *ANJAY KELAS!* Token \`${inputToken}\` lu valid boss!\n\nSelamat menikmati fitur VIP tanpa batas. Ketik /start buat masuk VVIP Lounge!`, { parse_mode: "Markdown" });
+        bot.sendMessage(chatId, `🎉 *ANJAY KELAS!* Token \`${inputToken}\` lu valid babi!\n\nSelamat menikmati fitur VIP tanpa batas. Ketik /start buat masuk VVIP Lounge!`, { parse_mode: "Markdown" });
         return;
     }
 
     // --- FITUR ALIGHT MOTION ENDPOINT (SEND & VERIF) ---
     const { token, statusInfo } = getUserSubscription(userId);
-    if (!token || statusInfo === "Masa Aktif Habis") {
-        return bot.sendMessage(chatId, "⛔ *WEY KERE BANGSAT!* Akses ditolak. Lo belum punya tiket VIP. Ketik /start terus pilih mau ngemis trial atau beli tiket resmi, miskin!");
+    if (!token || statusInfo.includes("Miskin") || statusInfo === "Masa Aktif Habis") {
+        return bot.sendMessage(chatId, "⛔ *WEY KERE!* Akses ditolak. Lo belum punya tiket VIP. \nLu siapa sok-sokan chat (Bot Setres😹)? Ketik /start terus masukin key atau beli token sana miskin!");
     }
 
     // Endpoint 1: Kirim Gmail (action=send)
@@ -735,17 +711,17 @@ bot.on('message', async (msg) => {
         global.userEmailSession = global.userEmailSession || {};
         global.userEmailSession[userId] = text.trim();
 
-        const loadMsg = await animateLoading(chatId, "Mengirim Magic Link MSH...");
+        const loadMsg = await animateLoading(chatId, "Mengirim Magic Link (Bot Setres😹)...");
         try {
-            const response = await axios.get(`${ENV_CONFIG.HAOMI_API_BASE}/api/am?action=send&apikey=${ENV_CONFIG.HAOMI_API_KEY}&email=${encodeURIComponent(text.trim())}`, { timeout: 20000 });
+            const response = await axios.get(`${CONFIG.HAOMI_API.BASE_URL}/api/am?action=send&apikey=${CONFIG.HAOMI_API.KEY}&email=${encodeURIComponent(text.trim())}`, { timeout: 20000 });
             const cleanData = sanitizeResponse(response.data);
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
 
             if (cleanData.status === true || cleanData.success === true || (typeof cleanData === 'string' && cleanData.includes('true'))) {
-                await bot.sendMessage(chatId, `✅ <b>Magic Link Terkirim!</b>\n\n<blockquote>Silakan cek email Gmail lo, lalu kirim balik <b>Magic Link (URL)</b> ke chat ini untuk aktivasi otomatis.</blockquote>`, { parse_mode: "HTML" });
+                await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `✅ <b>Magic Link Terkirim!</b>\n\n<blockquote>Cek Gmail lo gembel, lalu kirim balik <b>Magic Link (URL)</b> ke chat ini untuk aktivasi. Gausah pake lama.</blockquote>`, parse_mode: "HTML" });
             } else {
-                await bot.sendMessage(chatId, `❌ <b>Gagal Kirim Email:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML" });
+                await bot.sendMessage(chatId, `❌ <b>Gagal Kirim Email Tolol:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML" });
             }
         } catch (error) {
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
@@ -760,18 +736,18 @@ bot.on('message', async (msg) => {
         const email = global.userEmailSession[userId];
 
         if (!email) {
-            return bot.sendMessage(chatId, "⚠️ Heh! Kirim Gmail lo dulu sebelum ngirim Magic Link. Gimana sih.");
+            return bot.sendMessage(chatId, "⚠️ Heh Gobl*k! Kirim Gmail lo dulu sebelum ngirim Magic Link. Otak dipake napa.");
         }
 
         const loadMsg = await animateLoading(chatId, "Memproses Aktivasi Alight Motion...");
         try {
-            const response = await axios.get(`${ENV_CONFIG.HAOMI_API_BASE}/api/am?action=verif&apikey=${ENV_CONFIG.HAOMI_API_KEY}&email=${encodeURIComponent(email)}&url=${encodeURIComponent(text.trim())}`, { timeout: 20000 });
+            const response = await axios.get(`${CONFIG.HAOMI_API.BASE_URL}/api/am?action=verif&apikey=${CONFIG.HAOMI_API.KEY}&email=${encodeURIComponent(email)}&url=${encodeURIComponent(text.trim())}`, { timeout: 20000 });
             const cleanData = sanitizeResponse(response.data);
 
             try { await bot.deleteMessage(chatId, loadMsg.message_id); } catch (e) {}
 
             if (cleanData.status === true || cleanData.success === true) {
-                await bot.sendMessage(chatId, `🎉 <b>SAH! AKUN LO UDAH PREMIUM!</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>\n\nSantai aja boss, sekarang lu bebas pake Alight Motion sepuasnya.`, { parse_mode: "HTML" });
+                await bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `🎉 <b>SAH! AKUN LO UDAH PREMIUM BABI!</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>\n\nSantai aja boss, sekarang lu bebas pake Alight Motion sepuasnya.`, parse_mode: "HTML" });
                 delete global.userEmailSession[userId];
             } else {
                 await bot.sendMessage(chatId, `❌ <b>Gagal Memproses Verifikasi:</b>\n\n<blockquote><code>${escapeHTML(JSON.stringify(cleanData, null, 2))}</code></blockquote>`, { parse_mode: "HTML" });
@@ -783,16 +759,18 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    bot.sendMessage(chatId, "💡 *GAGAL PAHAM ANJ*NG?*\nKalo lo udah di dalem VVIP Lounge, lo cukup kirim **Email Gmail Alight Motion** buat mulai aktivasi, jangan bingung-bingung!");
+    bot.sendMessage(chatId, "💡 *Gagal Paham?*\nKalo lo udah di dalem VVIP Lounge, lo cukup kirim **Email Gmail Alight Motion** buat mulai aktivasi. JANGAN NGETIK SEMBARANGAN BABI!");
 });
 
-// --- COMMANDS ---
+// ==========================================
+// 9. CORE COMMANDS
+// ==========================================
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    if (isFlooding(chatId)) return bot.sendMessage(chatId, `⛔ <b>MSH SECURITY: KEBANYAKAN BACOT LU!</b>`, { parse_mode: "HTML" });
+    if (isFlooding(chatId)) return bot.sendMessage(chatId, `⛔ <b>(Bot Setres😹) ANTI-FLOOD: KEBANYAKAN BACOT LU SAMPAH!</b>`, { parse_mode: "HTML" });
 
     const banMin = checkBanStatus(chatId);
-    if (banMin > 0) return bot.sendMessage(chatId, `⛔ <b>MSH BANNED: Sisa ${banMin} menit!</b>`, { parse_mode: "HTML" });
+    if (banMin > 0) return bot.sendMessage(chatId, `⛔ <b>(Bot Setres😹) BANNED: Diem di pojokan babi, sisa ${banMin} menit!</b>`, { parse_mode: "HTML" });
     
     delete userState[chatId];
     sendStartMenu(chatId, msg);
@@ -802,15 +780,16 @@ bot.onText(/\/cek/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const { token, statusInfo } = getUserSubscription(userId);
+    const isOwner = db.users[userId]?.is_owner;
 
-    if (userId === OWNER_TELEGRAM_ID) {
-        return bot.sendMessage(chatId, `👑 <b>INFO AKUN OWNER:</b>\n\n<blockquote>Akses Anda sebagai Owner bersifat Permanen! ☕</blockquote>`, { parse_mode: "HTML" });
+    if (isOwner) {
+        return bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `👑 <b>INFO AKUN (Owner Setres😹):</b>\n\n<blockquote>Akses Anda sebagai Dewa bersifat Permanen! ☕ Silakan nikmati fasilitas Paduka.</blockquote>`, parse_mode: "HTML" });
     }
-    if (token && statusInfo !== "Masa Aktif Habis") {
-        bot.sendMessage(chatId, `⏱️ <b>MSH TOKEN INFO:</b>\n\n<blockquote>🔑 Token: <code>${token}</code>\n⏳ Sisa Waktu: <b>${statusInfo}</b> lagi.</blockquote>`, { parse_mode: "HTML" });
+    if (token && statusInfo !== "Belum Aktif (Miskin)" && statusInfo !== "Masa Aktif Habis") {
+        bot.sendPhoto(chatId, getRandomMenuBanner(), { caption: `⏱️ <b>(Bot Setres😹) TOKEN INFO:</b>\n\n<blockquote>🔑 Token: <code>${token}</code>\n⏳ Sisa Waktu: <b>${statusInfo}</b> lagi. \nBuruan dipake gausah banyak nanya anj*ng!</blockquote>`, parse_mode: "HTML" });
     } else {
-        bot.sendMessage(chatId, `🤡 Belum sewa token MSH! Beli dulu sono.`, { parse_mode: "HTML" });
+        bot.sendMessage(chatId, `🤡 Belum sewa token! Beli dulu sono miskin pake QRIS, gausah so cek-cek status babi.`, { parse_mode: "HTML" });
     }
 });
 
-console.log("Bot Telegram VVIP MSH Store (Anti-Error & Endpoints Fixed) Berjalan...");
+console.log("🚀 [SYSTEM] (Bot Setres😹) VVIP Store (Brutal Mode + Gambar) Berjalan Lancar...");
