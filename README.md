@@ -1,32 +1,35 @@
-<img src="https://capsule-render.vercel.app/api?type=cylinder&color=0:0d1117,50:0e2233,100:0d1117&height=150&section=header&text=haomi-bot-tele&fontSize=40&fontColor=e6edf3&fontAlignY=40&desc=telegram%20bot%20%E2%80%94%20ai%20reply%20%2B%20payment%20invoices&descSize=13&descAlignY=60" width="100%"/>
-
 <div align="center">
-<img src="https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white"/>
-<img src="https://img.shields.io/badge/Telegram-bot-26A5E4?style=flat-square&logo=telegram&logoColor=white"/>
-<img src="https://img.shields.io/badge/storage-JSON-lightgrey?style=flat-square&logo=json&logoColor=black"/>
+
+<img src="https://capsule-render.vercel.app/api?type=soft&color=0:000000,50:0f2f0f,100:000000&height=180&section=header&text=haomi-bot-tele&fontSize=40&fontColor=00ff41&fontAlignY=42&desc=%5B%20telegram%20bot%20%2F%2F%20ai%20protocol%20%5D&descSize=13&descAlignY=62&animation=fadeIn" width="100%"/>
+
 </div>
 
-## Features
+```bash
+root@xMSHaomi:~# cat /projects/bot/README
 
-- **AI auto-reply** — answers users via integrated AI API
-- **Payment invoices** — creates invoices through payment API
-- **JSON storage** — lightweight persistence, no DB setup
+  >> STATUS    : OPERATIONAL 24/7
+  >> ENGINE    : node-telegram-bot-api
+  >> AI        : auto-reply via integrated API
+  >> PAYMENT   : invoice otomatis
+```
 
-## Setup
+## ⚙ Structure
 
 ```bash
-git clone https://github.com/haomi-cell/haomi-bot-tele
-cd haomi-bot-tele
-npm install
-BOT_TOKEN=your_token node bot.js
+root@xMSHaomi:~# tree
+
+  ├── bot.js          → main process
+  └── database.json   → JSON storage
 ```
 
-## Structure
+## 🚀 Run
 
-```
-bot.js           — main bot
-database.json    — storage
+```bash
+root@xMSHaomi:~# git clone https://github.com/haomi-cell/haomi-bot-tele
+root@xMSHaomi:~# cd haomi-bot-tele && npm install
+root@xMSHaomi:~# BOT_TOKEN=xxx node bot.js
+  [✓] bot connected — polling active
 ```
 
 ---
-<div align="center"><sub>xMSHaomi</sub></div>
+<div align="center"><sub>root@xMSHaomi — telegram protocol</sub></div>
